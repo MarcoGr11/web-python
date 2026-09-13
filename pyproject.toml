@@ -1,0 +1,34 @@
+[tool.black]
+target-version = ["py311"]
+line-length = 100
+force-exclude = '''
+/(
+  migrations
+)/
+'''
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["**/migrations/*.py"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "DJ",  # flake8-django
+    "UP",  # pyupgrade
+    "C4",  # flake8-comprehensions
+]
+ignore = [
+    "E501",  # line length is enforced by black
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["auctions", "config"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/settings.py" = ["F401"]
