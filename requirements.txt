@@ -1,0 +1,11 @@
+django
+channels
+channels_redis
+psycopg2-binary
+python-dotenv
+daphne
+
+# dev tooling
+ruff
+black
+pre-commit
