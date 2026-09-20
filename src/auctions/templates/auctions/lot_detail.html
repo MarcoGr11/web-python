@@ -1,23 +1,31 @@
 {% extends "auctions/base.html" %}
 {% block content %}
-<h1>{{ lot.title }}</h1>
-<p>{{ lot.description }}</p>
-<p>Owner: {{ lot.owner.username }}</p>
-<p>Ends at: {{ lot.ends_at }}</p>
-<p>Current highest bid: <span id="highest-bid">{{ lot.current_highest_bid }}</span></p>
-{% if lot.owner_id == user.id or user.is_staff %}
-<p><a href="{% url 'lot_edit' lot.pk %}">Edit lot</a></p>
-{% endif %}
+<div class="card">
+    <h1>{{ lot.title }}</h1>
+    <p>{{ lot.description }}</p>
+    <p class="muted">Owner: {{ lot.owner.username }} · Ends at: {{ lot.ends_at }}</p>
+    <p>Current highest bid: <strong id="highest-bid">{{ lot.current_highest_bid }}</strong></p>
+    {% if lot.owner_id == user.id or user.is_staff %}
+    <p><a href="{% url 'lot_edit' lot.pk %}">Edit lot</a></p>
+    {% endif %}
 
-<h2>Place a bid</h2>
-<input type="number" id="bid-amount" step="0.01">
-<button id="bid-submit">Bid</button>
-<ul id="bid-log"></ul>
+    <h2>Place a bid</h2>
+    <p id="ws-status" class="muted">Connecting…</p>
+    <form id="bid-form">
+        <input type="number" id="bid-amount" step="0.01" min="0" required>
+        <button type="submit">Bid</button>
+    </form>
+    <ul class="plain" id="bid-log"></ul>
+</div>
 
 <script>
     const lotId = {{ lot.pk }};
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(`${protocol}//${window.location.host}/ws/auction/${lotId}/`);
+    const status = document.getElementById("ws-status");
+
+    socket.onopen = () => { status.textContent = "Connected — bids update in real time."; };
+    socket.onclose = () => { status.textContent = "Disconnected."; };
 
     socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
@@ -28,13 +36,16 @@
             item.textContent = `${data.user} bid ${data.amount}`;
         } else {
             item.textContent = `Error: ${data.reason}`;
+            item.classList.add("error");
         }
         log.prepend(item);
     };
 
-    document.getElementById("bid-submit").addEventListener("click", () => {
-        const amount = document.getElementById("bid-amount").value;
-        socket.send(JSON.stringify({amount: amount}));
+    document.getElementById("bid-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const amountInput = document.getElementById("bid-amount");
+        socket.send(JSON.stringify({amount: amountInput.value}));
+        amountInput.value = "";
     });
 </script>
 {% endblock %}

@@ -77,7 +77,7 @@ def lot_create(request):
             return redirect("lot_detail", pk=lot.pk)
     else:
         form = LotForm()
-    return render(request, "auctions/lot_form.html", {"form": form})
+    return render(request, "auctions/lot_create.html", {"form": form})
 
 
 @login_required
@@ -92,4 +92,4 @@ def lot_edit(request, pk):
             return redirect("lot_detail", pk=lot.pk)
     else:
         form = LotForm(instance=lot)
-    return render(request, "auctions/lot_form.html", {"form": form, "lot": lot})
+    return render(request, "auctions/lot_edit.html", {"form": form, "lot": lot})

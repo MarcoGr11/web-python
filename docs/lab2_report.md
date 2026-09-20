@@ -119,7 +119,30 @@ CRUD для лотів (`Lot`) поверх моделей з лаборатор
 лабораторної лише додає автентифікацію й прив'язку лота до власника, яку
 `AuctionConsumer` вже використовував (`user_id` зі `scope["user"]`).
 
-## 5. Тести
+## 5. Фронтенд (HTML-шаблони)
+
+Усі views рендерять реальний HTML через `render(request, "template.html", context)`
+— жоден маршрут не повертає голий текст чи JSON. Шаблони лежать у
+`src/auctions/templates/auctions/`:
+
+| Шаблон | View | Призначення |
+|---|---|---|
+| `base.html` | — | спільний макет: `<header>` з навігацією (Login/Register для анонімів; Lots/My dashboard/Admin dashboard/Logout для автентифікованих, посилання на admin-панель — лише для `is_staff`), єдиний inline `<style>` з мінімальною палітрою/типографікою (без Bootstrap/Tailwind) |
+| `register.html` | `register_view` | форма реєстрації (`UserCreationForm` + email) |
+| `login.html` | `login_view` | форма входу, повідомлення про помилку при неправильних даних |
+| `dashboard_user.html` | `dashboard_user` | привітання `Вітаємо, {{ user.username }}!` + список активних лотів |
+| `dashboard_admin.html` | `dashboard_admin` | привітання адміністратора + список усіх користувачів і список усіх лотів для модерації |
+| `lot_list.html` | `lot_list` | список усіх лотів з посиланнями на деталі й на редагування (лише для власника/адміна) |
+| `lot_detail.html` | `lot_detail` | деталі лота + `<form id="bid-form">`, що через inline JS відкриває `WebSocket` до `/ws/auction/<id>/` (consumer лабораторної 1), показує статус з'єднання, оновлює найвищу ставку в реальному часі (`bid_accepted`) і журнал подій без перезавантаження сторінки |
+| `lot_create.html` | `lot_create` | форма створення лота (`LotForm`) |
+| `lot_edit.html` | `lot_edit` | форма редагування лота, доступна лише власнику/адміну (перевірка — на рівні view, `views.py:86`) |
+
+Стилізація — єдиний `<style>`-блок у `base.html` (CSS-змінні, картки
+`.card`, акуратні форми/списки/кнопки), успадковується всіма сторінками
+через `{% extends "auctions/base.html" %}` — жодних зовнішніх
+CSS-фреймворків чи бібліотек.
+
+## 6. Тести
 
 Запуск: `docker compose up -d && cd src && python manage.py migrate && cd .. && pytest -v`
 (потрібен реальний PostgreSQL — `select_for_update` не працює на SQLite;
@@ -183,7 +206,7 @@ src/auctions/tests/test_permissions.py::test_anonymous_access_to_dashboard_redir
 ============================== 15 passed in 5.99s ==============================
 ```
 
-## 6. Підсумок виконання
+## 7. Підсумок виконання
 
 ### Основні завдання (5 балів)
 

@@ -1,18 +1,23 @@
 {% extends "auctions/base.html" %}
 {% block content %}
-<h1>Admin dashboard</h1>
-<h2>Users</h2>
-<ul>
-    {% for u in users %}
-    <li>{{ u.username }} ({{ u.email }}) — {% if u.is_staff %}admin{% else %}user{% endif %}</li>
-    {% endfor %}
-</ul>
-<h2>All lots</h2>
-<ul>
-    {% for lot in lots %}
-    <li><a href="{% url 'lot_detail' lot.pk %}">{{ lot.title }}</a> — owner: {{ lot.owner.username }}, current bid: {{ lot.current_highest_bid }}</li>
-    {% empty %}
-    <li>No lots.</li>
-    {% endfor %}
-</ul>
+<div class="card">
+    <h1>Admin dashboard</h1>
+    <p class="muted">Вітаємо, {{ user.username }}! You are signed in as an administrator.</p>
+
+    <h2>Users</h2>
+    <ul class="plain">
+        {% for u in users %}
+        <li>{{ u.username }} ({{ u.email }}) — {% if u.is_staff %}admin{% else %}user{% endif %}</li>
+        {% endfor %}
+    </ul>
+
+    <h2>All lots (moderation)</h2>
+    <ul class="plain">
+        {% for lot in lots %}
+        <li><a href="{% url 'lot_detail' lot.pk %}">{{ lot.title }}</a> — owner: {{ lot.owner.username }}, current bid: {{ lot.current_highest_bid }}</li>
+        {% empty %}
+        <li class="muted">No lots.</li>
+        {% endfor %}
+    </ul>
+</div>
 {% endblock %}
