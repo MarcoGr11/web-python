@@ -290,6 +290,8 @@
             const ctx = canvas.getContext("2d");
             const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
             let width, height, stars;
+            let activeEvent = null;
+            let eventInProgress = false;
 
             function resize() {
                 width = canvas.width = window.innerWidth;
@@ -308,6 +310,217 @@
                 }));
             }
 
+            // --- Ambient background events -------------------------------------
+            // Each factory returns { duration, update(time) -> finished, draw(ctx) }.
+            // update() computes this.t (0..1 progress) from the first frame's
+            // timestamp; draw() only reads that state, so re-entrancy is safe.
+
+            function makeComet() {
+                const margin = 40;
+                const edge = Math.floor(Math.random() * 4);
+                let x0, y0;
+                if (edge === 0) { x0 = -margin; y0 = Math.random() * height * 0.6; }
+                else if (edge === 1) { x0 = width + margin; y0 = Math.random() * height * 0.6; }
+                else if (edge === 2) { x0 = Math.random() * width; y0 = -margin; }
+                else { x0 = Math.random() * width; y0 = height + margin; }
+                const x1 = width - x0 + (Math.random() - 0.5) * width * 0.3;
+                const y1 = height - y0 + (Math.random() - 0.5) * height * 0.3;
+
+                return {
+                    duration: 2000 + Math.random() * 1000,
+                    start: null,
+                    x: x0,
+                    y: y0,
+                    update(time) {
+                        if (this.start === null) this.start = time;
+                        const t = Math.min(1, (time - this.start) / this.duration);
+                        this.x = x0 + (x1 - x0) * t;
+                        this.y = y0 + (y1 - y0) * t;
+                        return t >= 1;
+                    },
+                    draw(ctx2) {
+                        const dx = x1 - x0, dy = y1 - y0;
+                        const len = Math.hypot(dx, dy) || 1;
+                        const ux = dx / len, uy = dy / len;
+                        const trail = 60;
+                        const tailX = this.x - ux * trail;
+                        const tailY = this.y - uy * trail;
+                        const grad = ctx2.createLinearGradient(this.x, this.y, tailX, tailY);
+                        grad.addColorStop(0, "rgba(255, 255, 255, 0.9)");
+                        grad.addColorStop(1, "rgba(255, 255, 255, 0)");
+                        ctx2.strokeStyle = grad;
+                        ctx2.lineWidth = 2;
+                        ctx2.beginPath();
+                        ctx2.moveTo(this.x, this.y);
+                        ctx2.lineTo(tailX, tailY);
+                        ctx2.stroke();
+                        ctx2.beginPath();
+                        ctx2.fillStyle = "#fff";
+                        ctx2.arc(this.x, this.y, 2.2, 0, Math.PI * 2);
+                        ctx2.fill();
+                    },
+                };
+            }
+
+            function makeShip() {
+                const dir = Math.random() < 0.5 ? 1 : -1;
+                const y = 60 + Math.random() * Math.max(1, height - 120);
+                const x0 = dir === 1 ? -40 : width + 40;
+                const x1 = dir === 1 ? width + 40 : -40;
+                const size = 10;
+
+                return {
+                    duration: 4000 + Math.random() * 1000,
+                    start: null,
+                    x: x0,
+                    y,
+                    time: 0,
+                    update(time) {
+                        if (this.start === null) this.start = time;
+                        const t = Math.min(1, (time - this.start) / this.duration);
+                        this.x = x0 + (x1 - x0) * t;
+                        this.time = time;
+                        return t >= 1;
+                    },
+                    draw(ctx2) {
+                        ctx2.save();
+                        ctx2.translate(this.x, this.y);
+                        ctx2.scale(dir, 1);
+                        ctx2.fillStyle = "rgba(220, 220, 255, 0.85)";
+                        ctx2.beginPath();
+                        ctx2.moveTo(size, 0);
+                        ctx2.lineTo(-size, -size * 0.5);
+                        ctx2.lineTo(-size * 0.6, 0);
+                        ctx2.lineTo(-size, size * 0.5);
+                        ctx2.closePath();
+                        ctx2.fill();
+                        for (let i = 0; i < 3; i++) {
+                            const flicker = 0.3 + 0.5 * Math.abs(Math.sin(this.time * 0.01 + i));
+                            ctx2.beginPath();
+                            ctx2.fillStyle = `rgba(138, 200, 255, ${flicker * 0.6})`;
+                            ctx2.arc(-size - i * 5, (i % 2 === 0 ? 1 : -1) * 1.5, 1.4, 0, Math.PI * 2);
+                            ctx2.fill();
+                        }
+                        ctx2.restore();
+                    },
+                };
+            }
+
+            function makeSupernova() {
+                const x = 60 + Math.random() * Math.max(1, width - 120);
+                const y = 60 + Math.random() * Math.max(1, height - 120);
+                const particles = Array.from({ length: 14 }, () => ({
+                    angle: Math.random() * Math.PI * 2,
+                    speed: 40 + Math.random() * 60,
+                }));
+
+                return {
+                    duration: 1500 + Math.random() * 500,
+                    start: null,
+                    t: 0,
+                    update(time) {
+                        if (this.start === null) this.start = time;
+                        this.t = Math.min(1, (time - this.start) / this.duration);
+                        return this.t >= 1;
+                    },
+                    draw(ctx2) {
+                        const t = this.t;
+                        const coreRadius = 18 * Math.sin(Math.min(t * 2, 1) * (Math.PI / 2));
+                        const alpha = Math.max(0, 1 - t);
+                        ctx2.save();
+                        ctx2.globalAlpha = alpha;
+                        const grad = ctx2.createRadialGradient(x, y, 0, x, y, coreRadius + 6);
+                        grad.addColorStop(0, "rgba(255, 255, 255, 1)");
+                        grad.addColorStop(0.4, "rgba(180, 150, 255, 0.8)");
+                        grad.addColorStop(1, "rgba(180, 150, 255, 0)");
+                        ctx2.fillStyle = grad;
+                        ctx2.beginPath();
+                        ctx2.arc(x, y, coreRadius + 6, 0, Math.PI * 2);
+                        ctx2.fill();
+                        for (const p of particles) {
+                            const dist = p.speed * t * 1.4;
+                            ctx2.beginPath();
+                            ctx2.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                            ctx2.arc(x + Math.cos(p.angle) * dist, y + Math.sin(p.angle) * dist, 1.6, 0, Math.PI * 2);
+                            ctx2.fill();
+                        }
+                        ctx2.restore();
+                    },
+                };
+            }
+
+            function makeBlackHole() {
+                const x = 80 + Math.random() * Math.max(1, width - 160);
+                const y = 80 + Math.random() * Math.max(1, height - 160);
+                const radius = 16 + Math.random() * 6;
+                const maxPull = 40;
+                // ponytail: snapshots star refs by identity; a resize mid-event
+                // regenerates `stars` and silently orphans this list — fine for
+                // a rare cosmetic effect, not worth guarding against.
+                const affected = stars
+                    .map((s) => ({ star: s, d: Math.hypot(s.x - x, s.y - y), ox: s.x, oy: s.y }))
+                    .filter((e) => e.d > radius && e.d < 160)
+                    .sort((a, b) => a.d - b.d)
+                    .slice(0, 6);
+
+                return {
+                    duration: 3000 + Math.random() * 1000,
+                    start: null,
+                    t: 0,
+                    update(time) {
+                        if (this.start === null) this.start = time;
+                        this.t = Math.min(1, (time - this.start) / this.duration);
+                        const pull = this.t < 0.5 ? this.t / 0.5 : (1 - this.t) / 0.5;
+                        for (const a of affected) {
+                            const dx = x - a.ox, dy = y - a.oy;
+                            const dist = Math.hypot(dx, dy) || 1;
+                            const frac = Math.min(maxPull / dist, 0.6) * pull;
+                            a.star.x = a.ox + dx * frac;
+                            a.star.y = a.oy + dy * frac;
+                        }
+                        if (this.t >= 1) {
+                            for (const a of affected) {
+                                a.star.x = a.ox;
+                                a.star.y = a.oy;
+                            }
+                            return true;
+                        }
+                        return false;
+                    },
+                    draw(ctx2) {
+                        const t = this.t;
+                        const fade = t < 0.15 ? t / 0.15 : t > 0.85 ? (1 - t) / 0.15 : 1;
+                        ctx2.save();
+                        ctx2.globalAlpha = Math.max(0, Math.min(1, fade));
+                        ctx2.beginPath();
+                        ctx2.fillStyle = "#000";
+                        ctx2.arc(x, y, radius, 0, Math.PI * 2);
+                        ctx2.fill();
+                        ctx2.strokeStyle = "rgba(255, 210, 140, 0.85)";
+                        ctx2.lineWidth = 2;
+                        ctx2.beginPath();
+                        ctx2.ellipse(x, y, radius * 1.8, radius * 0.6, Math.PI / 6, 0, Math.PI * 2);
+                        ctx2.stroke();
+                        ctx2.restore();
+                    },
+                };
+            }
+
+            function scheduleNextEvent() {
+                if (reduceMotion) return;
+                const delay = 8000 + Math.random() * 7000; // 8-15s
+                setTimeout(() => {
+                    if (eventInProgress) {
+                        scheduleNextEvent();
+                        return;
+                    }
+                    const factories = [makeComet, makeShip, makeSupernova, makeBlackHole];
+                    const factory = factories[Math.floor(Math.random() * factories.length)];
+                    activeEvent = factory();
+                    eventInProgress = true;
+                }, delay);
+            }
+
             function draw(time) {
                 ctx.clearRect(0, 0, width, height);
                 for (const s of stars) {
@@ -319,6 +532,17 @@
                     ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
                     ctx.fill();
                 }
+
+                if (activeEvent) {
+                    const finished = activeEvent.update(time);
+                    activeEvent.draw(ctx);
+                    if (finished) {
+                        activeEvent = null;
+                        eventInProgress = false;
+                        scheduleNextEvent();
+                    }
+                }
+
                 if (!reduceMotion) requestAnimationFrame(draw);
             }
 
@@ -333,6 +557,7 @@
                 draw(0);
             } else {
                 requestAnimationFrame(draw);
+                scheduleNextEvent();
             }
         })();
     </script>
