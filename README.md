@@ -61,6 +61,47 @@ python manage.py seed
 Команда ідемпотентна (повторний запуск нічого не дублює) і в кінці виводить
 логіни/паролі створених користувачів.
 
+## REST API
+
+Окремий REST API (Django REST Framework) поверх тієї самої бізнес-логіки,
+що й HTML-сторінки й WebSocket-консюмер — авторизація через токен
+(`Authorization: Token <key>`).
+
+| Маршрут | Метод | Опис |
+|---|---|---|
+| `/api/auth/register/` | POST | реєстрація, повертає токен одразу |
+| `/api/auth/login/` | POST | `username`+`password` → токен |
+| `/api/auth/logout/` | POST | видаляє токен поточного користувача |
+| `/api/lots/` | GET/POST | список лотів / створення (власник = поточний користувач) |
+| `/api/lots/<id>/` | GET/PATCH/DELETE | деталі (будь-хто автентифікований) / редагування, видалення (лише власник або `is_staff`) |
+| `/api/lots/<id>/bids/` | GET | історія ставок на лот |
+| `/api/lots/<id>/bid/` | POST | зробити ставку — через ту саму `services.place_bid()`, що й WebSocket `AuctionConsumer` |
+| `/api/dashboard/user/` | GET | активні лоти + ставки поточного користувача |
+| `/api/dashboard/admin/` | GET | усі користувачі й лоти; лише `is_staff` (403 інакше) |
+
+Приклад через `curl` — реєстрація → логін → запит з токеном:
+
+```bash
+# 1. Реєстрація (одразу повертає токен)
+curl -X POST http://localhost:8000/api/auth/register/ \
+  -H "Content-Type: application/json" \
+  -d '{"username":"pilot3","email":"pilot3@example.com","password":"S3curePass!23"}'
+
+# 2. Або логін, якщо користувач вже існує
+curl -X POST http://localhost:8000/api/auth/login/ \
+  -H "Content-Type: application/json" \
+  -d '{"username":"pilot3","password":"S3curePass!23"}'
+# -> {"token": "<TOKEN>", "user": {...}}
+
+# 3. Запит з токеном
+curl http://localhost:8000/api/lots/ -H "Authorization: Token <TOKEN>"
+
+# 4. Ставка на лот (та сама race-condition-захищена логіка, що й у WebSocket)
+curl -X POST http://localhost:8000/api/lots/1/bid/ \
+  -H "Authorization: Token <TOKEN>" -H "Content-Type: application/json" \
+  -d '{"amount": "150.00"}'
+```
+
 ## Тести
 
 ```bash
