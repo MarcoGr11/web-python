@@ -1,0 +1,56 @@
+{% extends "auctions/base.html" %}
+{% block content %}
+<section class="hero">
+    <h1>🪐 Galactic Artifact Auction</h1>
+    <p class="tagline">
+        Торгуйте рідкісними артефактами з усього Зовнішнього рукава.
+        Ставки вирішуються за мілісекунди.
+    </p>
+    <div class="hero-actions">
+        {% if user.is_authenticated %}
+            <a class="btn" href="{% if user.is_staff %}{% url 'dashboard_admin' %}{% else %}{% url 'dashboard_user' %}{% endif %}">My dashboard</a>
+            <a class="btn btn-outline" href="{% url 'lot_list' %}">Browse lots</a>
+        {% else %}
+            <a class="btn" href="{% url 'register' %}">Register</a>
+            <a class="btn btn-outline" href="{% url 'login' %}">Login</a>
+        {% endif %}
+    </div>
+</section>
+
+<section>
+    <h2>Активні лоти</h2>
+    {% if lots %}
+    <div class="lot-grid">
+        {% for lot in lots %}
+        <a class="lot-card card" href="{% url 'lot_detail' lot.pk %}">
+            <h3>{{ lot.title }}</h3>
+            <p class="muted">Поточна ставка: {{ lot.current_highest_bid }}</p>
+            <p class="muted">Завершиться через: {{ lot.ends_at|timeuntil }}</p>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">Аукціони поки не розпочались.</p>
+    {% endif %}
+</section>
+
+<section>
+    <h2>Як це працює</h2>
+    <div class="steps">
+        <div class="step card">
+            <div class="step-num">1</div>
+            <p>Реєструйся й обирай лот</p>
+        </div>
+        <div class="step card">
+            <div class="step-num">2</div>
+            <p>Роби ставку в реальному часі через WebSocket</p>
+        </div>
+        <div class="step card">
+            <div class="step-num">3</div>
+            <p>Перемагай і забирай артефакт</p>
+        </div>
+    </div>
+</section>
+
+<p><a href="{% url 'lot_list' %}">Переглянути всі лоти →</a></p>
+{% endblock %}

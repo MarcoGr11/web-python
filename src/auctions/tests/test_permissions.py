@@ -40,6 +40,12 @@ def test_anonymous_access_to_dashboard_redirects_to_login(client):
     assert reverse("login") in resp.url
 
 
+def test_home_page_returns_200(client, db):
+    """The landing page is a public showcase — no login required."""
+    resp = client.get(reverse("home"))
+    assert resp.status_code == 200
+
+
 def test_regular_user_cannot_access_admin_dashboard(client, user):
     client.force_login(user)
     resp = client.get(reverse("dashboard_admin"))

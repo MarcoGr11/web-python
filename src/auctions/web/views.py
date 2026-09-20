@@ -11,6 +11,11 @@ from .decorators import role_required
 from .forms import LotForm, RegisterForm
 
 
+def home_view(request):
+    lots = Lot.objects.filter(ends_at__gt=timezone.now()).order_by("ends_at")[:4]
+    return render(request, "auctions/home.html", {"lots": lots})
+
+
 def register_view(request):
     if request.method == "POST":
         form = RegisterForm(request.POST)
