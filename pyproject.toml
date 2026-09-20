@@ -32,3 +32,9 @@ known-first-party = ["auctions", "config"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/settings.py" = ["F401"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
