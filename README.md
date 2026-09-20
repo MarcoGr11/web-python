@@ -25,7 +25,38 @@
 
 Детальний опис архітектури, компонентів і потоку даних — у
 [`docs/architecture.md`](docs/architecture.md) (включно з sequence diagram
-для двох клієнтів, що ставлять одночасно).
+для двох клієнтів, що ставлять одночасно). Звіт про лабораторну №2
+(ролі, автентифікація, розмежування прав, тести) — у
+[`docs/lab2_report.md`](docs/lab2_report.md).
+
+## Ролі та автентифікація
+
+- Використовується стандартна модель `django.contrib.auth.models.User`.
+  Ролі не потребують окремого поля чи міграції: `is_staff` = адміністратор,
+  усі інші автентифіковані користувачі = звичайний користувач (`user`).
+- Автентифікація — сесійна (`django.contrib.auth`), стандартна для Django.
+  WebSocket-з'єднання (`AuctionConsumer` з лабораторної 1) отримує того
+  самого автентифікованого користувача через `AuthMiddlewareStack`,
+  підключений в `config/asgi.py`.
+- Маршрути:
+  - `/accounts/register/` — реєстрація нового користувача.
+  - `/accounts/login/` / `/accounts/logout/` — вхід і вихід.
+  - `/dashboard/user/` — головна сторінка звичайного користувача (активні лоти).
+  - `/dashboard/admin/` — головна сторінка адміністратора (усі користувачі й лоти); доступна лише `is_staff`.
+  - `/lots/`, `/lots/new/`, `/lots/<id>/`, `/lots/<id>/edit/` — CRUD лотів; ставки робляться через WebSocket з лабораторної 1.
+- Адміністраторів створюють через `python manage.py createsuperuser` або
+  Django admin — окремої форми реєстрації для них немає (за завданням не
+  вимагається).
+
+## Тести
+
+```bash
+source .venv/bin/activate  # або своє venv
+docker compose up -d       # потрібен реальний PostgreSQL для select_for_update
+cd src && python manage.py migrate
+cd ..
+pytest -v
+```
 
 ## Стек
 
