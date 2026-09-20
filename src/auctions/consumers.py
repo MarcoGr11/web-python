@@ -3,22 +3,19 @@ from decimal import Decimal, InvalidOperation
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
-from django.core.cache import cache
-from django.db import transaction
-from django.utils import timezone
 
-from .models import Bid, Lot
+from . import services
 
 
 class AuctionConsumer(AsyncWebsocketConsumer):
     """
     Handles real-time bidding for a single lot.
 
-    Every bid is validated and persisted inside a database transaction that
-    locks the lot row with SELECT ... FOR UPDATE, so concurrent bids on the
-    same lot are serialized by PostgreSQL and only a genuinely higher bid can
-    ever win, regardless of how many WebSocket workers process requests in
-    parallel.
+    Every bid is validated and persisted by services.place_bid(), which locks
+    the lot row with SELECT ... FOR UPDATE inside a database transaction, so
+    concurrent bids on the same lot are serialized by PostgreSQL and only a
+    genuinely higher bid can ever win, regardless of how many WebSocket
+    workers process requests in parallel.
     """
 
     async def connect(self):
@@ -68,35 +65,7 @@ class AuctionConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def place_bid(self, user_id, amount):
-        with transaction.atomic():
-            lot = Lot.objects.select_for_update().get(id=self.lot_id)
-
-            if timezone.now() >= lot.ends_at:
-                return {
-                    "accepted": False,
-                    "reason": "auction_closed",
-                    "current_highest_bid": lot.current_highest_bid,
-                }
-
-            if amount <= lot.current_highest_bid:
-                return {
-                    "accepted": False,
-                    "reason": "outbid",
-                    "current_highest_bid": lot.current_highest_bid,
-                }
-
-            bid = Bid.objects.create(lot=lot, user_id=user_id, amount=amount)
-            lot.current_highest_bid = amount
-            lot.current_winner_id = user_id
-            lot.save(update_fields=["current_highest_bid", "current_winner"])
-
-        cache.set(f"lot:{lot.id}:highest_bid", str(amount), timeout=None)
-
-        return {
-            "accepted": True,
-            "amount": amount,
-            "username": bid.user.username,
-        }
+        return services.place_bid(self.lot_id, user_id, amount)
 
     async def bid_accepted(self, event):
         await self.send(
