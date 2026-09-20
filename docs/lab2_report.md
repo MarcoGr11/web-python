@@ -72,7 +72,7 @@ HTTP (після сесійного логіну з цієї лаборатор�
 
 ### 3.1 Вертикальне (за роллю)
 
-`src/auctions/decorators.py` — `role_required(role)`:
+`src/auctions/web/decorators.py` — `role_required(role)`:
 
 ```python
 def role_required(role):
@@ -88,13 +88,13 @@ def role_required(role):
     return decorator
 ```
 
-Застосовано до `dashboard_admin` (`src/auctions/views.py:48`). Неавторизований
+Застосовано до `dashboard_admin` (`src/auctions/web/views.py:48`). Неавторизований
 запит → `login_required` дає 302; авторизований, але без `is_staff` →
 `PermissionDenied` → Django повертає 403.
 
 ### 3.2 Горизонтальне (IDOR)
 
-`src/auctions/views.py:86`, `lot_edit` (рядок з перевіркою власника):
+`src/auctions/web/views.py:86`, `lot_edit` (рядок з перевіркою власника):
 
 ```python
 if lot.owner_id != request.user.id and not request.user.is_staff:
@@ -123,7 +123,7 @@ CRUD для лотів (`Lot`) поверх моделей з лаборатор
 
 Усі views рендерять реальний HTML через `render(request, "template.html", context)`
 — жоден маршрут не повертає голий текст чи JSON. Шаблони лежать у
-`src/auctions/templates/auctions/`:
+`src/auctions/web/templates/auctions/`:
 
 | Шаблон | View | Призначення |
 |---|---|---|
@@ -164,6 +164,16 @@ Fonts) для футуристичного вигляду, текст — Inter 
 Окремий REST API (Django REST Framework) поверх тієї самої бізнес-логіки,
 що й HTML-сторінки та WebSocket-консюмер з лабораторної 1.
 
+Файли фронтенду (HTML) і бекенду (REST) розведені по підпакетах одного
+Django app `auctions`, щоб не плодити окремі apps заради невеликого
+проєкту: `auctions/web/` — views, forms, decorators, urls, templates для
+HTML-сторінок; `auctions/api/` — views, serializers, urls для REST API;
+спільна доменна логіка (`models.py`, `services.py`, `consumers.py`,
+`routing.py`) лишається в корені `auctions/`, бо потрібна обом шарам
+однаково. `TEMPLATES["DIRS"]` у `config/settings.py` вказує явно на
+`auctions/web/templates`, бо Django `APP_DIRS` шукає шаблони лише в корені
+app, а не в підпакетах.
+
 ### 6.1 Чому Token Authentication
 
 Для API обрано `rest_framework.authentication.TokenAuthentication`
@@ -190,7 +200,7 @@ API за задумом призначений для клієнтів поза 
 `src/auctions/services.py::place_bid(lot_id, user_id, amount)` — чисту
 синхронну функцію без жодної залежності від Channels чи DRF. І
 `AuctionConsumer.place_bid()` (обгорнутий у `@database_sync_to_async`), і
-`LotViewSet.bid()` (`api_views.py`) викликають саме її. Рефактор
+`LotViewSet.bid()` (`src/auctions/api/views.py`) викликають саме її. Рефактор
 консюмера — суто структурний, поведінка та формат відповіді (`accepted`,
 `reason`, `current_highest_bid`, `amount`, `username`) не змінились, що
 підтверджено незмінним проходженням `test_consumers.py`.
@@ -204,16 +214,16 @@ API за задумом призначений для клієнтів поза 
 | `/api/auth/logout/` | POST | автентифікований |
 | `/api/lots/` | GET/POST | автентифікований (`owner` = поточний користувач на POST) |
 | `/api/lots/<id>/` | GET | автентифікований |
-| `/api/lots/<id>/` | PATCH/DELETE | власник або `is_staff` (`IsOwnerOrAdmin`, `api_views.py`) |
+| `/api/lots/<id>/` | PATCH/DELETE | власник або `is_staff` (`IsOwnerOrAdmin`, `src/auctions/api/views.py`) |
 | `/api/lots/<id>/bids/` | GET | автентифікований |
 | `/api/lots/<id>/bid/` | POST | автентифікований, викликає `services.place_bid()` |
 | `/api/dashboard/user/` | GET | автентифікований |
 | `/api/dashboard/admin/` | GET | лише `is_staff` (`permissions.IsAdminUser`) |
 
 Права на `PATCH`/`DELETE` лота навмисно точно повторюють правило з HTML
-`lot_edit` (`views.py:86`) — той самий власник-або-адмін критерій,
-реалізований окремим DRF permission-класом `IsOwnerOrAdmin`
-(`api_views.py`), що застосовується лише до `update`/`partial_update`/
+`lot_edit` (`src/auctions/web/views.py:86`) — той самий власник-або-адмін
+критерій, реалізований окремим DRF permission-класом `IsOwnerOrAdmin`
+(`src/auctions/api/views.py`), що застосовується лише до `update`/`partial_update`/
 `destroy`, тоді як перегляд (`GET`) і ставки (`bid`) відкриті для будь-якого
 автентифікованого користувача — так само, як HTML-сторінка деталей лота
 доступна будь-кому залогіненому, а не лише власнику.

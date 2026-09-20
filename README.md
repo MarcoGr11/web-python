@@ -124,7 +124,20 @@ pytest -v
 ```
 galactic-auction/
 ├── docs/                 # архітектура, діаграми, демо pre-commit
-├── src/                  # код Django-проєкту (config + auctions)
+├── src/                  # код Django-проєкту
+│   ├── config/           # settings, asgi/wsgi, root urls
+│   └── auctions/
+│       ├── models.py         # спільна доменна логіка (Lot, Bid)
+│       ├── services.py       # place_bid() — спільна для WS і REST API
+│       ├── consumers.py      # WebSocket (лабораторна 1)
+│       ├── routing.py
+│       ├── management/       # python manage.py seed
+│       ├── web/               # фронтенд: HTML-сторінки
+│       │   ├── views.py, forms.py, decorators.py, urls.py
+│       │   └── templates/auctions/*.html
+│       ├── api/                # бекенд: REST API (DRF)
+│       │   ├── views.py, serializers.py, urls.py
+│       └── tests/
 ├── config/               # приклади конфігурації / інфраструктурні файли
 ├── scripts/              # допоміжні скрипти
 ├── docker-compose.yml    # PostgreSQL + Redis для локальної розробки

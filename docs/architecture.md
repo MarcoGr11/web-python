@@ -159,8 +159,9 @@ sequenceDiagram
   consumer'і — вже готовий, автентифікований (або анонімний) `User`.
 - **Розмежування прав**:
   - вертикальне — декоратор `role_required("admin")`
-    (`auctions/decorators.py`), що обгортає `login_required`: неавторизований
+    (`auctions/web/decorators.py`), що обгортає `login_required`: неавторизований
     → 302 на логін, авторизований без потрібної ролі → `PermissionDenied` (403);
-  - горизонтальне (IDOR) — у `lot_edit` (`auctions/views.py`) явна перевірка
+  - горизонтальне (IDOR) — у `lot_edit` (`auctions/web/views.py`) явна перевірка
     `lot.owner_id != request.user.id and not request.user.is_staff` перед
-    доступом до чужого лота.
+    доступом до чужого лота (та сама перевірка повторена в `IsOwnerOrAdmin`
+    у `auctions/api/views.py` для REST API).
