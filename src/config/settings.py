@@ -39,6 +39,8 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "channels",
+    "rest_framework",
+    "rest_framework.authtoken",
     "auctions",
 ]
 
@@ -154,3 +156,15 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # everyone else = regular user. No custom user model/migration needed.
 
 LOGIN_URL = "login"
+
+
+# Django REST Framework — token auth for the REST API (config/urls.py -> /api/).
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authtoken.authentication.TokenAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+}

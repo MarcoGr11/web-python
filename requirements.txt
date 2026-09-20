@@ -4,6 +4,7 @@ channels_redis
 psycopg2-binary
 python-dotenv
 daphne
+djangorestframework
 
 # dev tooling
 ruff
