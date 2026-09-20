@@ -136,6 +136,7 @@ CRUD для лотів (`Lot`) поверх моделей з лаборатор
 | `lot_detail.html` | `lot_detail` | деталі лота + `<form id="bid-form">`, що через inline JS відкриває `WebSocket` до `/ws/auction/<id>/` (consumer лабораторної 1), показує статус з'єднання, оновлює найвищу ставку в реальному часі (`bid_accepted`) і журнал подій без перезавантаження сторінки |
 | `lot_create.html` | `lot_create` | форма створення лота (`LotForm`) |
 | `lot_edit.html` | `lot_edit` | форма редагування лота, доступна лише власнику/адміну (перевірка — на рівні view, `views.py:86`) |
+| `home.html` | `home_view` | головна сторінка (`/`), доступна анонімно |
 
 Стилізація — єдиний `<style>`-блок у `base.html` (CSS-змінні, картки
 `.card`, акуратні форми/списки/кнопки), успадковується всіма сторінками
@@ -158,6 +159,34 @@ Fonts) для футуристичного вигляду, текст — Inter 
 лишилось менше хвилини. Усі анімації вимикаються через
 `@media (prefers-reduced-motion: reduce)`, щоб не заважати людям з
 чутливістю до руху/мерехтіння.
+
+### 5.2 Головна сторінка (`/`)
+
+`home_view` (`web/views.py`) — публічний маршрут `name="home"`, без
+`@login_required`: hero-блок з назвою й тематичним підзаголовком, кнопки
+(Register/Login для анонімів, My dashboard/Browse lots для автентифікованих
+— посилання на `dashboard_admin` чи `dashboard_user` залежно від
+`is_staff`), прев'ю 3–4 найближчих активних лотів
+(`Lot.objects.filter(ends_at__gt=now).order_by('ends_at')[:4]`, порожній
+стан — дружнє повідомлення), секція "Як це працює" (3 кроки) і посилання на
+`/lots/`. Час до завершення лота в картках рендериться вбудованим
+Django-фільтром `{{ lot.ends_at|timeuntil }}` — без додаткового JS.
+Лого в шапці (`base.html`) веде на `/` на всіх сторінках.
+
+### 5.3 Фонові космічні події
+
+Той самий `<canvas id="starfield">`, що малює мерехтливі зірки, додатково
+раз на випадковий інтервал 8–15с програє одну з 4 коротких фонових подій
+(без нових DOM-елементів і бібліотек): комету зі шлейфом (2–3с), корабель
+із мерехтливим вихлопом (4–5с), наднову з частинками, що розлітаються
+(1.5–2с, ≤20 частинок), чорну діру з акреційним диском, що тимчасово тягне
+до 6 найближчих зіркових точок ближче до центру (3–4с). Прапорець
+`eventInProgress` не дає подіям накладатись — наступна планується лише
+після завершення попередньої. Усе на `pointer-events: none` і `z-index`
+нижче контенту, тож клікам не заважає. При `prefers-reduced-motion: reduce`
+події взагалі не плануються (використано вже наявну гілку, де цикл
+`requestAnimationFrame` не запускається — лишається єдиний статичний кадр
+зірок).
 
 ## 6. REST API
 
@@ -228,12 +257,44 @@ API за задумом призначений для клієнтів поза 
 автентифікованого користувача — так само, як HTML-сторінка деталей лота
 доступна будь-кому залогіненому, а не лише власнику.
 
-## 7. Тести
+## 7. Docker-контейнеризація
 
-Запуск: `docker compose up -d && cd src && python manage.py migrate && cd .. && pytest -v`
+`docker-compose.yml` тепер піднімає весь стек чотирма сервісами:
+`postgres`/`redis` (інфраструктура, як і раніше) плюс два нові —
+`migrate` і `web`, обидва зібрані з єдиного кореневого `Dockerfile`
+(`python:3.13-slim`, `COPY src/ src/`, `WORKDIR /app/src`, без `CMD` за
+замовчуванням — команда задається окремо для кожного сервісу).
+
+- **`migrate`** — одноразовий init-контейнер: `python manage.py migrate
+  --noinput && python manage.py seed`, `restart: "no"`. Навмисно окремий
+  сервіс, а не частина entrypoint `web`, щоб разова логіка ініціалізації
+  (міграції, сіди) не змішувалась із довготривалим процесом сервера.
+- **`web`** — `daphne -b 0.0.0.0 -p 8000 config.asgi:application`,
+  обслуговує HTML (`auctions/web/`), REST API (`auctions/api/`) і
+  WebSocket в одному ASGI-процесі; стартує лише після успішного
+  завершення `migrate` (`depends_on: migrate: condition:
+  service_completed_successfully`), і після `postgres`/`redis`
+  (`condition: service_healthy`).
+- Усередині Docker-мережі `POSTGRES_HOST`/`REDIS_HOST` перевизначені на
+  імена сервісів (`postgres`, `redis`) через `environment:` у
+  `migrate`/`web`, які мають пріоритет над значеннями з `env_file: .env` —
+  тому локальний `.env` (з `localhost`) для запуску поза Docker
+  лишається робочим без змін.
+
+Перевірено: `docker compose up --build` → `docker compose ps -a` показує
+рівно 4 сервіси, `migrate` — `Exited (0)`, решта — `Up`/`healthy`; логи
+`migrate`/`web` без трейсбеків; наскрізний smoke-тест через `curl` до
+контейнера (`/`, `/accounts/login/`, `/api/lots/`, `/api/auth/login/`) —
+коректні коди відповідей.
+
+## 8. Тести
+
+Запуск: `docker compose up -d postgres redis && cd src && python manage.py migrate && cd .. && pytest -v`
 (потрібен реальний PostgreSQL — `select_for_update` не працює на SQLite;
 для WebSocket-тестів channel layer підмінюється на
 `channels.layers.InMemoryChannelLayer`, Redis для тестів не потрібен).
+Тести запускаються локально проти `postgres`/`redis` з Docker Compose, без
+`web`/`migrate` — їх піднімати не обов'язково для `pytest`.
 
 ### Список тестів
 
@@ -246,6 +307,7 @@ API за задумом призначений для клієнтів поза 
 
 `src/auctions/tests/test_permissions.py`
 - `test_anonymous_access_to_dashboard_redirects_to_login` — анонімний доступ до захищеного маршруту → 302 на логін.
+- `test_home_page_returns_200` — анонімний GET `/` → 200 (головна сторінка публічна, без логіну).
 - `test_regular_user_cannot_access_admin_dashboard` — звичайний користувач на `/dashboard/admin/` → **403** (вертикальне розмежування).
 - `test_admin_can_access_admin_dashboard` — адміністратор (`is_staff`) на `/dashboard/admin/` → 200.
 - `test_user_cannot_edit_someone_elses_lot` — користувач Б редагує лот користувача А → **403** (IDOR).
@@ -283,26 +345,27 @@ rootdir: /Users/admin/PycharmProjects/WebPython Lab1/galactic-auction
 configfile: pyproject.toml
 plugins: asyncio-1.4.0, django-4.14.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collecting ... collected 25 items
+collecting ... collected 26 items
 
-src/auctions/tests/test_api.py::test_anonymous_get_lots_returns_401 PASSED [  4%]
-src/auctions/tests/test_api.py::test_login_with_correct_credentials_returns_token PASSED [  8%]
-src/auctions/tests/test_api.py::test_login_with_wrong_password_is_rejected PASSED [ 12%]
-src/auctions/tests/test_api.py::test_regular_user_cannot_access_admin_dashboard PASSED [ 16%]
-src/auctions/tests/test_api.py::test_admin_can_access_admin_dashboard PASSED [ 20%]
-src/auctions/tests/test_api.py::test_user_cannot_patch_someone_elses_lot PASSED [ 24%]
-src/auctions/tests/test_api.py::test_owner_can_patch_their_own_lot PASSED [ 28%]
-src/auctions/tests/test_api.py::test_register_creates_user_and_returns_token PASSED [ 32%]
-src/auctions/tests/test_api.py::test_lot_create_sets_owner_via_api PASSED [ 36%]
-src/auctions/tests/test_api.py::test_bid_action_uses_shared_service PASSED [ 40%]
-src/auctions/tests/test_auth.py::test_register_creates_user_and_logs_them_in PASSED [ 44%]
-src/auctions/tests/test_auth.py::test_register_duplicate_username_is_rejected PASSED [ 48%]
-src/auctions/tests/test_auth.py::test_login_with_correct_credentials_succeeds PASSED [ 52%]
-src/auctions/tests/test_auth.py::test_login_with_wrong_password_is_rejected PASSED [ 56%]
-src/auctions/tests/test_auth.py::test_logout_ends_the_session PASSED     [ 60%]
-src/auctions/tests/test_lots.py::test_lot_create_sets_owner_and_initial_bid PASSED [ 64%]
-src/auctions/tests/test_permissions.py::test_regular_user_cannot_access_admin_dashboard PASSED [ 68%]
-src/auctions/tests/test_permissions.py::test_admin_can_access_admin_dashboard PASSED [ 72%]
+src/auctions/tests/test_api.py::test_anonymous_get_lots_returns_401 PASSED [  3%]
+src/auctions/tests/test_api.py::test_login_with_correct_credentials_returns_token PASSED [  7%]
+src/auctions/tests/test_api.py::test_login_with_wrong_password_is_rejected PASSED [ 11%]
+src/auctions/tests/test_api.py::test_regular_user_cannot_access_admin_dashboard PASSED [ 15%]
+src/auctions/tests/test_api.py::test_admin_can_access_admin_dashboard PASSED [ 19%]
+src/auctions/tests/test_api.py::test_user_cannot_patch_someone_elses_lot PASSED [ 23%]
+src/auctions/tests/test_api.py::test_owner_can_patch_their_own_lot PASSED [ 26%]
+src/auctions/tests/test_api.py::test_register_creates_user_and_returns_token PASSED [ 30%]
+src/auctions/tests/test_api.py::test_lot_create_sets_owner_via_api PASSED [ 34%]
+src/auctions/tests/test_api.py::test_bid_action_uses_shared_service PASSED [ 38%]
+src/auctions/tests/test_auth.py::test_register_creates_user_and_logs_them_in PASSED [ 42%]
+src/auctions/tests/test_auth.py::test_register_duplicate_username_is_rejected PASSED [ 46%]
+src/auctions/tests/test_auth.py::test_login_with_correct_credentials_succeeds PASSED [ 50%]
+src/auctions/tests/test_auth.py::test_login_with_wrong_password_is_rejected PASSED [ 53%]
+src/auctions/tests/test_auth.py::test_logout_ends_the_session PASSED     [ 57%]
+src/auctions/tests/test_lots.py::test_lot_create_sets_owner_and_initial_bid PASSED [ 61%]
+src/auctions/tests/test_permissions.py::test_home_page_returns_200 PASSED [ 65%]
+src/auctions/tests/test_permissions.py::test_regular_user_cannot_access_admin_dashboard PASSED [ 69%]
+src/auctions/tests/test_permissions.py::test_admin_can_access_admin_dashboard PASSED [ 73%]
 src/auctions/tests/test_permissions.py::test_user_cannot_edit_someone_elses_lot PASSED [ 76%]
 src/auctions/tests/test_permissions.py::test_owner_can_edit_their_own_lot PASSED [ 80%]
 src/auctions/tests/test_permissions.py::test_admin_can_edit_any_lot PASSED [ 84%]
@@ -311,10 +374,10 @@ src/auctions/tests/test_consumers.py::test_anonymous_bid_is_rejected PASSED [ 92
 src/auctions/tests/test_lots.py::test_lot_create_requires_login PASSED   [ 96%]
 src/auctions/tests/test_permissions.py::test_anonymous_access_to_dashboard_redirects_to_login PASSED [100%]
 
-============================== 25 passed in 10.32s ==============================
+============================== 26 passed in 10.59s ==============================
 ```
 
-## 8. Підсумок виконання
+## 9. Підсумок виконання
 
 ### Основні завдання (5 балів)
 
@@ -336,16 +399,23 @@ src/auctions/tests/test_permissions.py::test_anonymous_access_to_dashboard_redir
 6. **MVP бізнес-логіки (2 бали)** — виконано: CRUD лотів (створення,
    список, деталі, редагування), прив'язка до `owner`, ставки — через
    WebSocket лабораторної 1, прив'язані до `user`.
-7. **Тести pytest (3 бали)** — виконано: 25 тестів (15 HTML/WebSocket +
+7. **Тести pytest (3 бали)** — виконано: 26 тестів (16 HTML/WebSocket +
    10 REST API), усі проходять (`pytest -v` вище), покриті всі 5
    обов'язкових сценаріїв (в обох шарах — HTML і API) плюс додаткові
    (реєстрація, дублікат username, CRUD лотів, WebSocket-автентифікація,
-   спільна `services.place_bid()`).
+   спільна `services.place_bid()`, публічність головної сторінки).
 8. **UI/UX-тема, JS-ефекти, seed-команда** — виконано: галактична тема
    (`base.html`), анімований зоряний фон, ефект спалаху ставки, бортовий
-   таймер (розділ 5.1); `python manage.py seed` для наповнення тестовими
-   даними.
+   таймер (розділ 5.1); головна сторінка (`/`) з hero-блоком, прев'ю
+   активних лотів і кроками "як це працює" (розділ 5.2); 4 випадкові
+   фонові космічні події — комета, корабель, наднова, чорна діра
+   (розділ 5.3); `python manage.py seed` для наповнення тестовими даними.
 9. **REST API (DRF)** — виконано: Token Authentication, `LotViewSet` з
    `IsOwnerOrAdmin`, ендпоінти реєстрації/логіну/логауту/дашбордів,
    рефакторинг `AuctionConsumer` на спільну `services.place_bid()` без
    дублювання логіки race condition (розділ 6).
+10. **Docker-контейнеризація** — виконано: `Dockerfile` +
+    `docker-compose.yml` з сервісами `migrate` (одноразовий init:
+    migrate + seed) і `web` (daphne, стартує лише після успішного
+    `migrate`); `docker compose up --build` піднімає весь стек одним
+    рядком (розділ 7).
