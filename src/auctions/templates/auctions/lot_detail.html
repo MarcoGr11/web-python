@@ -3,7 +3,8 @@
 <div class="card">
     <h1>{{ lot.title }}</h1>
     <p>{{ lot.description }}</p>
-    <p class="muted">Owner: {{ lot.owner.username }} · Ends at: {{ lot.ends_at }}</p>
+    <p class="muted">Owner: {{ lot.owner.username }}</p>
+    <p id="countdown" class="countdown" data-ends-at="{{ lot.ends_at|date:'c' }}">⏱ --:--:--</p>
     <p>Current highest bid: <strong id="highest-bid">{{ lot.current_highest_bid }}</strong></p>
     {% if lot.owner_id == user.id or user.is_staff %}
     <p><a href="{% url 'lot_edit' lot.pk %}">Edit lot</a></p>
@@ -32,7 +33,11 @@
         const log = document.getElementById("bid-log");
         const item = document.createElement("li");
         if (data.type === "bid_accepted") {
-            document.getElementById("highest-bid").textContent = data.amount;
+            const highestBid = document.getElementById("highest-bid");
+            highestBid.textContent = data.amount;
+            highestBid.classList.remove("bid-flash");
+            void highestBid.offsetWidth; // restart the animation on repeat bids
+            highestBid.classList.add("bid-flash");
             item.textContent = `${data.user} bid ${data.amount}`;
         } else {
             item.textContent = `Error: ${data.reason}`;
@@ -47,5 +52,32 @@
         socket.send(JSON.stringify({amount: amountInput.value}));
         amountInput.value = "";
     });
+
+    // Cockpit-style countdown to lot.ends_at.
+    (function () {
+        const countdownEl = document.getElementById("countdown");
+        const endsAt = new Date(countdownEl.dataset.endsAt).getTime();
+        let timerId;
+
+        function tick() {
+            const diff = endsAt - Date.now();
+            if (diff <= 0) {
+                countdownEl.textContent = "⏱ Auction closed";
+                countdownEl.classList.add("countdown-closed");
+                countdownEl.classList.remove("countdown-urgent");
+                clearInterval(timerId);
+                return;
+            }
+            const totalSeconds = Math.floor(diff / 1000);
+            const h = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+            const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+            const s = String(totalSeconds % 60).padStart(2, "0");
+            countdownEl.textContent = `⏱ ${h}:${m}:${s} remaining`;
+            countdownEl.classList.toggle("countdown-urgent", diff < 60000);
+        }
+
+        tick();
+        timerId = setInterval(tick, 1000);
+    })();
 </script>
 {% endblock %}
