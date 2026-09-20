@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{% block title %}Galactic Artifact Auction{% endblock %}</title>
+</head>
+<body>
+    <nav>
+        {% if user.is_authenticated %}
+            {{ user.username }} ({% if user.is_staff %}admin{% else %}user{% endif %})
+            | <a href="{% url 'lot_list' %}">Lots</a>
+            | <a href="{% url 'dashboard_user' %}">My dashboard</a>
+            {% if user.is_staff %}| <a href="{% url 'dashboard_admin' %}">Admin dashboard</a>{% endif %}
+            | <form action="{% url 'logout' %}" method="post" style="display:inline">
+                {% csrf_token %}<button type="submit">Logout</button>
+              </form>
+        {% else %}
+            <a href="{% url 'login' %}">Login</a> | <a href="{% url 'register' %}">Register</a>
+        {% endif %}
+    </nav>
+    <hr>
+    {% block content %}{% endblock %}
+</body>
+</html>

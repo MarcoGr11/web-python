@@ -147,3 +147,10 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# Auth
+# Roles are modeled with the built-in User.is_staff flag: staff = admin,
+# everyone else = regular user. No custom user model/migration needed.
+
+LOGIN_URL = "login"

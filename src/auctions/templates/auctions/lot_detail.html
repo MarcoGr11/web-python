@@ -1,0 +1,40 @@
+{% extends "auctions/base.html" %}
+{% block content %}
+<h1>{{ lot.title }}</h1>
+<p>{{ lot.description }}</p>
+<p>Owner: {{ lot.owner.username }}</p>
+<p>Ends at: {{ lot.ends_at }}</p>
+<p>Current highest bid: <span id="highest-bid">{{ lot.current_highest_bid }}</span></p>
+{% if lot.owner_id == user.id or user.is_staff %}
+<p><a href="{% url 'lot_edit' lot.pk %}">Edit lot</a></p>
+{% endif %}
+
+<h2>Place a bid</h2>
+<input type="number" id="bid-amount" step="0.01">
+<button id="bid-submit">Bid</button>
+<ul id="bid-log"></ul>
+
+<script>
+    const lotId = {{ lot.pk }};
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(`${protocol}//${window.location.host}/ws/auction/${lotId}/`);
+
+    socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        const log = document.getElementById("bid-log");
+        const item = document.createElement("li");
+        if (data.type === "bid_accepted") {
+            document.getElementById("highest-bid").textContent = data.amount;
+            item.textContent = `${data.user} bid ${data.amount}`;
+        } else {
+            item.textContent = `Error: ${data.reason}`;
+        }
+        log.prepend(item);
+    };
+
+    document.getElementById("bid-submit").addEventListener("click", () => {
+        const amount = document.getElementById("bid-amount").value;
+        socket.send(JSON.stringify({amount: amount}));
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "auctions/base.html" %}
+{% block content %}
+<h1>Lots</h1>
+<p><a href="{% url 'lot_create' %}">Create a new lot</a></p>
+<ul>
+    {% for lot in lots %}
+    <li>
+        <a href="{% url 'lot_detail' lot.pk %}">{{ lot.title }}</a>
+        — current bid: {{ lot.current_highest_bid }}, owner: {{ lot.owner.username }}
+        {% if lot.owner_id == user.id or user.is_staff %}
+            (<a href="{% url 'lot_edit' lot.pk %}">edit</a>)
+        {% endif %}
+    </li>
+    {% empty %}
+    <li>No lots yet.</li>
+    {% endfor %}
+</ul>
+{% endblock %}

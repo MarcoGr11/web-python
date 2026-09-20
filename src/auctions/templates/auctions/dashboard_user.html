@@ -1,0 +1,13 @@
+{% extends "auctions/base.html" %}
+{% block content %}
+<h1>My dashboard</h1>
+<p><a href="{% url 'lot_create' %}">Create a new lot</a></p>
+<h2>Active lots</h2>
+<ul>
+    {% for lot in lots %}
+    <li><a href="{% url 'lot_detail' lot.pk %}">{{ lot.title }}</a> — current bid: {{ lot.current_highest_bid }}</li>
+    {% empty %}
+    <li>No active lots.</li>
+    {% endfor %}
+</ul>
+{% endblock %}
