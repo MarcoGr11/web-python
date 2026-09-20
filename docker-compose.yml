@@ -27,5 +27,42 @@ services:
       timeout: 5s
       retries: 5
 
+  # One-shot init container: applies migrations and seeds demo data, then
+  # exits. Kept separate from `web` so the long-running server process
+  # doesn't also own this one-time setup logic.
+  migrate:
+    build: .
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: sh -c "python manage.py migrate --noinput && python manage.py seed"
+    restart: "no"
+
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
+    restart: unless-stopped
+
 volumes:
   postgres_data:

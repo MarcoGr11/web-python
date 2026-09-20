@@ -50,8 +50,10 @@
 
 ### Тестові дані
 
-Наповнити базу демо-адміном, кількома користувачами й лотами одразу, без
-ручного шеллу:
+`docker compose up --build` уже прожене `python manage.py seed`
+автоматично через сервіс `migrate` (див. розділ "Запуск"). Вручну —
+наповнити базу демо-адміном, кількома користувачами й лотами без ручного
+шеллу:
 
 ```bash
 cd src
@@ -140,7 +142,8 @@ galactic-auction/
 │       └── tests/
 ├── config/               # приклади конфігурації / інфраструктурні файли
 ├── scripts/              # допоміжні скрипти
-├── docker-compose.yml    # PostgreSQL + Redis для локальної розробки
+├── Dockerfile            # образ застосунку (спільний для web і migrate)
+├── docker-compose.yml    # postgres, redis, migrate (init), web (застосунок)
 ├── .env.example          # приклад змінних середовища
 ├── pyproject.toml        # конфігурація ruff / black
 ├── .pre-commit-config.yaml
@@ -149,34 +152,48 @@ galactic-auction/
 
 ## Запуск
 
-### 1. Залежності Python
+### Через Docker Compose (рекомендовано)
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Це піднімає весь стек одразу:
+- `postgres` і `redis` — інфраструктура (чекають на `healthcheck`);
+- `migrate` — одноразовий init-контейнер: прожене `migrate` і `seed`,
+  наповнить базу демо-адміном/користувачами/лотами, після чого завершується
+  (`Exited (0)` у `docker compose ps -a` — це очікувано, не помилка);
+- `web` — Django/Channels-застосунок через `daphne`, стартує лише після
+  успішного завершення `migrate` (`depends_on: condition:
+  service_completed_successfully`), обслуговує HTML (`/`), REST API
+  (`/api/`) і WebSocket (`/ws/auction/<lot_id>/`) на `http://localhost:8000/`.
+
+Перевірити стан сервісів:
+
+```bash
+docker compose ps -a
+docker compose logs web
+docker compose logs migrate
+```
+
+Логіни/паролі демо-користувачів, створених `seed`, — у виводі
+`docker compose logs migrate` або в описі команди нижче.
+
+### Локально без Docker (для розробки)
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-### 2. PostgreSQL і Redis через Docker Compose
-
-```bash
 cp .env.example .env
-docker compose up -d
-```
+docker compose up -d postgres redis   # лише БД і кеш, без web/migrate
 
-Це підніме PostgreSQL (порт 5432) і Redis (порт 6379) з параметрами,
-узгодженими з `.env.example`.
-
-Якщо Docker не використовується — встановіть PostgreSQL і Redis локально і
-пропишіть відповідні `POSTGRES_*` / `REDIS_*` значення у `.env`.
-
-### 3. Міграції та запуск сервера
-
-```bash
 cd src
 python manage.py migrate
-python manage.py createsuperuser   # опційно
-python manage.py runserver         # для звичайного HTTP/адмінки
+python manage.py seed                 # або createsuperuser, за бажанням
+python manage.py runserver            # для звичайного HTTP/адмінки
 
 # або через ASGI-сервер (потрібен для WebSocket):
 daphne -b 0.0.0.0 -p 8000 config.asgi:application
@@ -184,9 +201,10 @@ daphne -b 0.0.0.0 -p 8000 config.asgi:application
 
 WebSocket-ендпоінт для ставок на лот: `ws://localhost:8000/ws/auction/<lot_id>/`.
 
-### 4. Перевірка конфігурації
+### Перевірка конфігурації
 
 ```bash
+cd src
 python manage.py check
 ```
 
