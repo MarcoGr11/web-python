@@ -159,7 +159,66 @@ Fonts) для футуристичного вигляду, текст — Inter 
 `@media (prefers-reduced-motion: reduce)`, щоб не заважати людям з
 чутливістю до руху/мерехтіння.
 
-## 6. Тести
+## 6. REST API
+
+Окремий REST API (Django REST Framework) поверх тієї самої бізнес-логіки,
+що й HTML-сторінки та WebSocket-консюмер з лабораторної 1.
+
+### 6.1 Чому Token Authentication
+
+Для API обрано `rest_framework.authentication.TokenAuthentication`
+(`config/settings.py`, `REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"]`),
+а не сесійну автентифікацію, яку використовують HTML-сторінки. Причина —
+API за задумом призначений для клієнтів поза браузером (скрипти, `curl`,
+мобільні клієнти), яким незручно нести CSRF-токен і cookie-сесію; простий
+статичний токен у заголовку `Authorization: Token <key>` — стандартний і
+найпростіший варіант для навчального REST API на DRF, що не заважає
+паралельно існуючій сесійній автентифікації HTML-частини (обидва механізми
+незалежні й не конфліктують, бо HTTP-шар лабораторної 2 і `/api/` — окремі
+`urlpatterns` з різними `DEFAULT_AUTHENTICATION_CLASSES`, застосованими
+лише в рамках DRF-в'юх).
+
+### 6.2 Чому спільна `services.place_bid()`
+
+До цієї сесії логіка прийняття ставки (`SELECT ... FOR UPDATE` +
+перевірки + запис `Bid`) жила лише в `AuctionConsumer.place_bid()`
+(`consumers.py`, лабораторна 1). Коли з'явилась потреба прийняти ставку
+ще й через REST API (`POST /api/lots/<id>/bid/`), дублювати цю логіку в
+другому місці означало б два незалежні захисти від race condition, які
+могли б розійтись при майбутніх правках (наприклад хтось поправить
+перевірку в одному місці й забуде про інше). Тому логіку винесено в
+`src/auctions/services.py::place_bid(lot_id, user_id, amount)` — чисту
+синхронну функцію без жодної залежності від Channels чи DRF. І
+`AuctionConsumer.place_bid()` (обгорнутий у `@database_sync_to_async`), і
+`LotViewSet.bid()` (`api_views.py`) викликають саме її. Рефактор
+консюмера — суто структурний, поведінка та формат відповіді (`accepted`,
+`reason`, `current_highest_bid`, `amount`, `username`) не змінились, що
+підтверджено незмінним проходженням `test_consumers.py`.
+
+### 6.3 Маршрути
+
+| Маршрут | Метод | Права доступу |
+|---|---|---|
+| `/api/auth/register/` | POST | будь-хто |
+| `/api/auth/login/` | POST | будь-хто |
+| `/api/auth/logout/` | POST | автентифікований |
+| `/api/lots/` | GET/POST | автентифікований (`owner` = поточний користувач на POST) |
+| `/api/lots/<id>/` | GET | автентифікований |
+| `/api/lots/<id>/` | PATCH/DELETE | власник або `is_staff` (`IsOwnerOrAdmin`, `api_views.py`) |
+| `/api/lots/<id>/bids/` | GET | автентифікований |
+| `/api/lots/<id>/bid/` | POST | автентифікований, викликає `services.place_bid()` |
+| `/api/dashboard/user/` | GET | автентифікований |
+| `/api/dashboard/admin/` | GET | лише `is_staff` (`permissions.IsAdminUser`) |
+
+Права на `PATCH`/`DELETE` лота навмисно точно повторюють правило з HTML
+`lot_edit` (`views.py:86`) — той самий власник-або-адмін критерій,
+реалізований окремим DRF permission-класом `IsOwnerOrAdmin`
+(`api_views.py`), що застосовується лише до `update`/`partial_update`/
+`destroy`, тоді як перегляд (`GET`) і ставки (`bid`) відкриті для будь-якого
+автентифікованого користувача — так само, як HTML-сторінка деталей лота
+доступна будь-кому залогіненому, а не лише власнику.
+
+## 7. Тести
 
 Запуск: `docker compose up -d && cd src && python manage.py migrate && cd .. && pytest -v`
 (потрібен реальний PostgreSQL — `select_for_update` не працює на SQLite;
@@ -191,6 +250,18 @@ Fonts) для футуристичного вигляду, текст — Inter 
 - `test_authenticated_user_bid_is_accepted` — автентифікований користувач через WebSocket робить ставку → `bid_accepted`.
 - `test_anonymous_bid_is_rejected` — анонімне WebSocket-з'єднання надсилає ставку → `error` / `not_authenticated`.
 
+`src/auctions/tests/test_api.py` (REST API, `rest_framework.test.APIClient`)
+- `test_anonymous_get_lots_returns_401` — анонімний GET `/api/lots/` → **401**.
+- `test_login_with_correct_credentials_returns_token` — логін правильними даними → 200, токен у відповіді.
+- `test_login_with_wrong_password_is_rejected` — логін неправильним паролем → **400**.
+- `test_regular_user_cannot_access_admin_dashboard` — звичайний користувач на `/api/dashboard/admin/` → **403**.
+- `test_admin_can_access_admin_dashboard` — `is_staff` на `/api/dashboard/admin/` → 200.
+- `test_user_cannot_patch_someone_elses_lot` — користувач Б робить PATCH на лот користувача А → **403** (IDOR через API).
+- `test_owner_can_patch_their_own_lot` — власник PATCH свого лота → 200.
+- `test_register_creates_user_and_returns_token` — реєстрація через API повертає токен одразу.
+- `test_lot_create_sets_owner_via_api` — створений через API лот має правильного `owner` і `current_highest_bid = starting_price`.
+- `test_bid_action_uses_shared_service` — ставка через `POST /api/lots/<id>/bid/` коректно проходить через `services.place_bid()` і оновлює `current_highest_bid`.
+
 ### Вивід `pytest -v`
 
 ```
@@ -202,28 +273,38 @@ rootdir: /Users/admin/PycharmProjects/WebPython Lab1/galactic-auction
 configfile: pyproject.toml
 plugins: asyncio-1.4.0, django-4.14.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collecting ... collected 15 items
+collecting ... collected 25 items
 
-src/auctions/tests/test_auth.py::test_register_creates_user_and_logs_them_in PASSED [  6%]
-src/auctions/tests/test_auth.py::test_register_duplicate_username_is_rejected PASSED [ 13%]
-src/auctions/tests/test_auth.py::test_login_with_correct_credentials_succeeds PASSED [ 20%]
-src/auctions/tests/test_auth.py::test_login_with_wrong_password_is_rejected PASSED [ 26%]
-src/auctions/tests/test_auth.py::test_logout_ends_the_session PASSED     [ 33%]
-src/auctions/tests/test_lots.py::test_lot_create_sets_owner_and_initial_bid PASSED [ 40%]
-src/auctions/tests/test_permissions.py::test_regular_user_cannot_access_admin_dashboard PASSED [ 46%]
-src/auctions/tests/test_permissions.py::test_admin_can_access_admin_dashboard PASSED [ 53%]
-src/auctions/tests/test_permissions.py::test_user_cannot_edit_someone_elses_lot PASSED [ 60%]
-src/auctions/tests/test_permissions.py::test_owner_can_edit_their_own_lot PASSED [ 66%]
-src/auctions/tests/test_permissions.py::test_admin_can_edit_any_lot PASSED [ 73%]
-src/auctions/tests/test_consumers.py::test_authenticated_user_bid_is_accepted PASSED [ 80%]
-src/auctions/tests/test_consumers.py::test_anonymous_bid_is_rejected PASSED [ 86%]
-src/auctions/tests/test_lots.py::test_lot_create_requires_login PASSED   [ 93%]
+src/auctions/tests/test_api.py::test_anonymous_get_lots_returns_401 PASSED [  4%]
+src/auctions/tests/test_api.py::test_login_with_correct_credentials_returns_token PASSED [  8%]
+src/auctions/tests/test_api.py::test_login_with_wrong_password_is_rejected PASSED [ 12%]
+src/auctions/tests/test_api.py::test_regular_user_cannot_access_admin_dashboard PASSED [ 16%]
+src/auctions/tests/test_api.py::test_admin_can_access_admin_dashboard PASSED [ 20%]
+src/auctions/tests/test_api.py::test_user_cannot_patch_someone_elses_lot PASSED [ 24%]
+src/auctions/tests/test_api.py::test_owner_can_patch_their_own_lot PASSED [ 28%]
+src/auctions/tests/test_api.py::test_register_creates_user_and_returns_token PASSED [ 32%]
+src/auctions/tests/test_api.py::test_lot_create_sets_owner_via_api PASSED [ 36%]
+src/auctions/tests/test_api.py::test_bid_action_uses_shared_service PASSED [ 40%]
+src/auctions/tests/test_auth.py::test_register_creates_user_and_logs_them_in PASSED [ 44%]
+src/auctions/tests/test_auth.py::test_register_duplicate_username_is_rejected PASSED [ 48%]
+src/auctions/tests/test_auth.py::test_login_with_correct_credentials_succeeds PASSED [ 52%]
+src/auctions/tests/test_auth.py::test_login_with_wrong_password_is_rejected PASSED [ 56%]
+src/auctions/tests/test_auth.py::test_logout_ends_the_session PASSED     [ 60%]
+src/auctions/tests/test_lots.py::test_lot_create_sets_owner_and_initial_bid PASSED [ 64%]
+src/auctions/tests/test_permissions.py::test_regular_user_cannot_access_admin_dashboard PASSED [ 68%]
+src/auctions/tests/test_permissions.py::test_admin_can_access_admin_dashboard PASSED [ 72%]
+src/auctions/tests/test_permissions.py::test_user_cannot_edit_someone_elses_lot PASSED [ 76%]
+src/auctions/tests/test_permissions.py::test_owner_can_edit_their_own_lot PASSED [ 80%]
+src/auctions/tests/test_permissions.py::test_admin_can_edit_any_lot PASSED [ 84%]
+src/auctions/tests/test_consumers.py::test_authenticated_user_bid_is_accepted PASSED [ 88%]
+src/auctions/tests/test_consumers.py::test_anonymous_bid_is_rejected PASSED [ 92%]
+src/auctions/tests/test_lots.py::test_lot_create_requires_login PASSED   [ 96%]
 src/auctions/tests/test_permissions.py::test_anonymous_access_to_dashboard_redirects_to_login PASSED [100%]
 
-============================== 15 passed in 5.99s ==============================
+============================== 25 passed in 10.32s ==============================
 ```
 
-## 7. Підсумок виконання
+## 8. Підсумок виконання
 
 ### Основні завдання (5 балів)
 
@@ -245,6 +326,16 @@ src/auctions/tests/test_permissions.py::test_anonymous_access_to_dashboard_redir
 6. **MVP бізнес-логіки (2 бали)** — виконано: CRUD лотів (створення,
    список, деталі, редагування), прив'язка до `owner`, ставки — через
    WebSocket лабораторної 1, прив'язані до `user`.
-7. **Тести pytest (3 бали)** — виконано: 15 тестів, усі проходять
-   (`pytest -v` вище), покриті всі 5 обов'язкових сценаріїв плюс додаткові
-   (реєстрація, дублікат username, CRUD лотів, WebSocket-автентифікація).
+7. **Тести pytest (3 бали)** — виконано: 25 тестів (15 HTML/WebSocket +
+   10 REST API), усі проходять (`pytest -v` вище), покриті всі 5
+   обов'язкових сценаріїв (в обох шарах — HTML і API) плюс додаткові
+   (реєстрація, дублікат username, CRUD лотів, WebSocket-автентифікація,
+   спільна `services.place_bid()`).
+8. **UI/UX-тема, JS-ефекти, seed-команда** — виконано: галактична тема
+   (`base.html`), анімований зоряний фон, ефект спалаху ставки, бортовий
+   таймер (розділ 5.1); `python manage.py seed` для наповнення тестовими
+   даними.
+9. **REST API (DRF)** — виконано: Token Authentication, `LotViewSet` з
+   `IsOwnerOrAdmin`, ендпоінти реєстрації/логіну/логауту/дашбордів,
+   рефакторинг `AuctionConsumer` на спільну `services.place_bid()` без
+   дублювання логіки race condition (розділ 6).
