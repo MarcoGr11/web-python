@@ -59,7 +59,9 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        # auctions/web/ is a subpackage, not an app root, so APP_DIRS won't
+        # find its templates/ automatically — list it explicitly.
+        "DIRS": [BASE_DIR / "auctions" / "web" / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [

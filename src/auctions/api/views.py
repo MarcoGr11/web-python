@@ -9,8 +9,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import services
-from .models import Bid, Lot
+from .. import services
+from ..models import Bid, Lot
 from .serializers import BidSerializer, LotSerializer, RegisterSerializer, UserSerializer
 
 

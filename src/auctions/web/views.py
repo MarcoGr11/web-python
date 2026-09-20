@@ -6,9 +6,9 @@ from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
+from ..models import Lot
 from .decorators import role_required
 from .forms import LotForm, RegisterForm
-from .models import Lot
 
 
 def register_view(request):
