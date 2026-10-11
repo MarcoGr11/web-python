@@ -1,17 +1,22 @@
+# One file for both environments: DJANGO_ENV (sandbox|production, default
+# sandbox) picks the env file and the compose project name, so each
+# environment gets its own containers and its own postgres_data volume.
+#   docker compose up --build                       -> sandbox
+#   DJANGO_ENV=production docker compose up --build -> production
+name: galactic-auction-${DJANGO_ENV:-sandbox}
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-galactic_auction}
-      POSTGRES_USER: ${POSTGRES_USER:-galactic_auction}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-galactic_auction}
+    env_file:
+      - .env.${DJANGO_ENV:-sandbox}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-galactic_auction} -d ${POSTGRES_DB:-galactic_auction}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -27,13 +32,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # One-shot init container: applies migrations and seeds demo data, then
-  # exits. Kept separate from `web` so the long-running server process
+  # One-shot init container: applies migrations and (sandbox only) seeds
+  # demo data with well-known passwords, then exits. Kept separate from `web` so the long-running server process
   # doesn't also own this one-time setup logic.
   migrate:
     build: .
     env_file:
-      - .env
+      - .env.${DJANGO_ENV:-sandbox}
     environment:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
@@ -42,7 +47,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -c "python manage.py migrate --noinput && python manage.py seed"
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             if [ \"$$DJANGO_ENV\" = sandbox ]; then python manage.py seed; fi"
     restart: "no"
 
   web:
@@ -50,7 +57,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - .env.${DJANGO_ENV:-sandbox}
     environment:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
