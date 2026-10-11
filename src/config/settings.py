@@ -8,25 +8,33 @@ https://docs.djangoproject.com/en/6.1/topics/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv(BASE_DIR.parent / ".env")
+# DJANGO_ENV selects which committed env file to load: .env.sandbox or
+# .env.production. Real environment variables (docker compose, CI) always win,
+# because load_dotenv doesn't override what's already set.
+DJANGO_ENV = os.environ.get("DJANGO_ENV", "sandbox")
+if DJANGO_ENV not in ("sandbox", "production"):
+    raise ImproperlyConfigured(f"Unknown DJANGO_ENV={DJANGO_ENV!r}")
+load_dotenv(BASE_DIR.parent / f".env.{DJANGO_ENV}")
 
 
-def env(name, default=None):
-    return os.environ.get(name, default)
+def env(name):
+    try:
+        return os.environ[name]
+    except KeyError:
+        raise ImproperlyConfigured(f"Missing required environment variable {name}") from None
 
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env("DJANGO_SECRET_KEY", "django-insecure-change-me-in-production")
+SECRET_KEY = env("SECRET_KEY")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env("DJANGO_DEBUG", "True") == "True"
+DEBUG = env("DEBUG") == "True"
 
-ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = env("ALLOWED_HOSTS").split(",")
 
 
 # Application definition
@@ -83,19 +91,19 @@ ASGI_APPLICATION = "config.asgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("POSTGRES_DB", "galactic_auction"),
-        "USER": env("POSTGRES_USER", "galactic_auction"),
-        "PASSWORD": env("POSTGRES_PASSWORD", "galactic_auction"),
-        "HOST": env("POSTGRES_HOST", "localhost"),
-        "PORT": env("POSTGRES_PORT", "5432"),
+        "NAME": env("POSTGRES_DB"),
+        "USER": env("POSTGRES_USER"),
+        "PASSWORD": env("POSTGRES_PASSWORD"),
+        "HOST": env("POSTGRES_HOST"),
+        "PORT": env("POSTGRES_PORT"),
     }
 }
 
 
 # Channels / Redis
 
-REDIS_HOST = env("REDIS_HOST", "localhost")
-REDIS_PORT = env("REDIS_PORT", "6379")
+REDIS_HOST = env("REDIS_HOST")
+REDIS_PORT = env("REDIS_PORT")
 
 CHANNEL_LAYERS = {
     "default": {

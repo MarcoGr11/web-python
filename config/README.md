@@ -3,7 +3,10 @@
 Ця директорія містить приклади конфігурації та інфраструктурні файли проєкту
 (на відміну від `src/config/`, яка є пакетом налаштувань самого Django-проєкту).
 
-- Приклад змінних середовища: [`../.env.example`](../.env.example) — скопіюйте
-  його в `../.env` і підставте свої значення перед запуском.
+- Змінні середовища: [`../.env.sandbox`](../.env.sandbox) і
+  [`../.env.production`](../.env.production) — закомічені з тестовими
+  значеннями-заглушками. Який файл підвантажується, визначає змінна
+  `DJANGO_ENV` (`sandbox` за замовчуванням). Реальні секрети передаються
+  справжніми змінними оточення — вони мають пріоритет над файлом.
 - Django settings: `../src/config/settings.py`.
-- Docker Compose (PostgreSQL + Redis) для локальної розробки: [`../docker-compose.yml`](../docker-compose.yml).
+- Docker Compose: [`../docker-compose.yml`](../docker-compose.yml).
