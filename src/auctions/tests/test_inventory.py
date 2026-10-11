@@ -104,3 +104,6 @@ def test_seed_creates_closed_won_lots_idempotently(db):
     pilot1.profile.refresh_from_db()
     assert pilot1.profile.balance == Decimal("10000.00") - won[0].current_highest_bid
     assert User.objects.get(username="admin").profile.balance == Decimal("10000.00")
+    # Seller of the closed lot is paid once, even though seed ran twice.
+    pilot2 = User.objects.get(username="pilot2")
+    assert pilot2.profile.balance == Decimal("10000.00") + won[0].current_highest_bid
