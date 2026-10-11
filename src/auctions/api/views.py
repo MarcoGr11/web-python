@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -86,6 +87,12 @@ class LotViewSet(viewsets.ModelViewSet):
             owner=self.request.user,
             current_highest_bid=serializer.validated_data["starting_price"],
         )
+
+    def perform_destroy(self, instance):
+        # A sold lot is the winner's inventory item; its owner can't take it back.
+        if instance.is_closed:
+            raise ValidationError({"reason": "auction_closed"})
+        services.delete_lot(instance.id)
 
     @action(detail=True, methods=["get"])
     def bids(self, request, pk=None):

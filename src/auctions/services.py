@@ -116,3 +116,18 @@ def close_expired_lots() -> int:
             profile.save(update_fields=["balance"])
         Lot.objects.filter(id__in=[lot.id for lot in lots]).update(is_closed=True)
     return len(lots)
+
+
+def delete_lot(lot_id) -> None:
+    """Delete a lot, first refunding the leader's frozen bid if it's still open.
+
+    A closed lot's money already went to the seller, so nothing is refunded
+    for it. Same lot-then-profile lock order as place_bid().
+    """
+    with transaction.atomic():
+        lot = Lot.objects.select_for_update().get(id=lot_id)
+        if lot.current_winner_id is not None and not lot.is_closed:
+            leader = UserProfile.objects.select_for_update().get(user_id=lot.current_winner_id)
+            leader.balance += lot.current_highest_bid
+            leader.save(update_fields=["balance"])
+        lot.delete()

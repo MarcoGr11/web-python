@@ -167,3 +167,55 @@ def test_one_seller_paid_for_several_lots(lot):
     expire(second)
     assert services.close_expired_lots() == 2
     assert balance(lot.owner) == STARTING_BALANCE + 500
+
+
+def api_client_for(user):
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=user).key}")
+    return client
+
+
+def test_deleting_lot_with_leading_bid_refunds_leader(lot):
+    leader = make_user("leader", balance=Decimal("1000"))
+    services.place_bid(lot.id, leader.id, Decimal("300"))
+    resp = api_client_for(lot.owner).delete(f"/api/lots/{lot.pk}/")
+    assert resp.status_code == 204
+    assert not Lot.objects.filter(pk=lot.pk).exists()
+    assert balance(leader) == 1000
+
+
+def test_deleting_lot_without_bids_changes_no_balances(lot):
+    bystander = make_user("bystander")
+    resp = api_client_for(lot.owner).delete(f"/api/lots/{lot.pk}/")
+    assert resp.status_code == 204
+    assert balance(lot.owner) == STARTING_BALANCE
+    assert balance(bystander) == STARTING_BALANCE
+
+
+def test_non_owner_cannot_delete_lot(lot):
+    leader = make_user("leader", balance=Decimal("1000"))
+    services.place_bid(lot.id, leader.id, Decimal("300"))
+    resp = api_client_for(make_user("mallory")).delete(f"/api/lots/{lot.pk}/")
+    assert resp.status_code == 403
+    assert Lot.objects.filter(pk=lot.pk).exists()
+    assert balance(leader) == 700  # still frozen on the lot
+
+
+def test_closed_lot_cannot_be_deleted_by_owner(lot):
+    winner = make_user("winner")
+    services.place_bid(lot.id, winner.id, Decimal("300"))
+    expire(lot)
+    services.close_expired_lots()
+    resp = api_client_for(lot.owner).delete(f"/api/lots/{lot.pk}/")
+    assert resp.status_code == 400
+    assert Lot.objects.filter(pk=lot.pk, current_winner=winner).exists()
+
+
+def test_admin_site_delete_refunds_leader(client, lot):
+    leader = make_user("leader", balance=Decimal("1000"))
+    services.place_bid(lot.id, leader.id, Decimal("300"))
+    client.force_login(User.objects.create_superuser("root", "root@example.com", "x"))
+    resp = client.post(f"/admin/auctions/lot/{lot.pk}/delete/", {"post": "yes"})
+    assert resp.status_code == 302
+    assert not Lot.objects.filter(pk=lot.pk).exists()
+    assert balance(leader) == 1000
