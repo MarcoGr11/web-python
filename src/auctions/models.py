@@ -1,5 +1,30 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+STARTING_BALANCE = Decimal("10000.00")
+
+
+class UserProfile(models.Model):
+    """Per-user wallet. `balance` is spendable money: the amount of a user's
+    current leading bids is already deducted ("frozen") from it."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile"
+    )
+    balance = models.DecimalField(max_digits=12, decimal_places=2, default=STARTING_BALANCE)
+
+    def __str__(self):
+        return f"{self.user} ({self.balance})"
+
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def create_profile(sender, instance, created, **kwargs):
+    if created:
+        UserProfile.objects.create(user=instance)
 
 
 class Lot(models.Model):
