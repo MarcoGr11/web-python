@@ -78,6 +78,9 @@ def place_bid(lot_id, user_id, amount: Decimal) -> dict:
         "amount": amount,
         "username": bid.user.username,
         "bid_id": bid.id,
+        # New balances of everyone this bid touched: the bidder and the
+        # refunded previous leader. Used to update their headers live.
+        "balances": {uid: p.balance for uid, p in profiles.items()},
     }
 
 

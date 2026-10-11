@@ -119,7 +119,7 @@ def test_balance_shown_in_header_and_dashboard(client, lot):
     services.place_bid(lot.id, bidder.id, Decimal("300"))
     client.force_login(bidder)
     html = client.get("/dashboard/user/").content.decode()
-    assert "💰 700.00" in html  # header
+    assert '<span id="header-balance">700.00</span>' in html  # header
     assert "Balance: <strong>700.00</strong>" in html
     assert "frozen in leading bids: 300.00" in html
 
@@ -219,3 +219,42 @@ def test_admin_site_delete_refunds_leader(client, lot):
     assert resp.status_code == 302
     assert not Lot.objects.filter(pk=lot.pk).exists()
     assert balance(leader) == 1000
+
+
+@pytest.mark.django_db(transaction=True)
+@override_settings(CHANNEL_LAYERS={"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}})
+async def test_websocket_sends_each_user_only_their_own_new_balance():
+    @database_sync_to_async
+    def setup():
+        seller = make_user("seller")
+        first = make_user("first", balance=Decimal("1000"))
+        second = make_user("second", balance=Decimal("1000"))
+        lot = Lot.objects.create(
+            title="Relic",
+            starting_price=100,
+            current_highest_bid=100,
+            owner=seller,
+            ends_at=timezone.now() + timedelta(days=1),
+        )
+        services.place_bid(lot.id, first.id, Decimal("300"))  # first: 700 left
+        return seller, first, second, lot
+
+    seller, first, second, lot = await setup()
+    sockets = {}
+    for user in (seller, first, second):
+        communicator = WebsocketCommunicator(
+            URLRouter(websocket_urlpatterns), f"/ws/auction/{lot.id}/"
+        )
+        communicator.scope["user"] = user
+        await communicator.connect()
+        sockets[user.username] = communicator
+
+    await sockets["second"].send_json_to({"amount": "400"})
+    received = {name: await ws.receive_json_from() for name, ws in sockets.items()}
+    for ws in sockets.values():
+        await ws.disconnect()
+
+    assert received["second"]["new_balance"] == "600.00"  # bidder: charged
+    assert received["first"]["new_balance"] == "1000.00"  # outbid: refunded
+    assert "new_balance" not in received["seller"]  # bystander: nothing leaked
+    assert received["seller"]["user"] == "second"

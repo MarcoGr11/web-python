@@ -50,6 +50,9 @@ class AuctionConsumer(AsyncWebsocketConsumer):
                     "type": "bid_accepted",
                     "amount": str(result["amount"]),
                     "user": result["username"],
+                    # Server-side only: bid_accepted() forwards each
+                    # connection just its own user's balance.
+                    "balances": {str(uid): str(b) for uid, b in result["balances"].items()},
                 },
             )
         else:
@@ -68,12 +71,9 @@ class AuctionConsumer(AsyncWebsocketConsumer):
         return services.place_bid(self.lot_id, user_id, amount)
 
     async def bid_accepted(self, event):
-        await self.send(
-            text_data=json.dumps(
-                {
-                    "type": "bid_accepted",
-                    "amount": event["amount"],
-                    "user": event["user"],
-                }
-            )
-        )
+        message = {"type": "bid_accepted", "amount": event["amount"], "user": event["user"]}
+        user = self.scope.get("user")
+        if user is not None and user.is_authenticated and str(user.id) in event["balances"]:
+            # This user placed the bid or was just outbid and refunded.
+            message["new_balance"] = event["balances"][str(user.id)]
+        await self.send(text_data=json.dumps(message))

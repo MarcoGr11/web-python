@@ -33,6 +33,7 @@
 <script>
     {% if not lot.is_closed %}
     const lotId = {{ lot.pk }};
+    const currentUsername = "{{ user.username|escapejs }}";
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(`${protocol}//${window.location.host}/ws/auction/${lotId}/`);
     const status = document.getElementById("ws-status");
@@ -59,6 +60,15 @@
             void highestBid.offsetWidth; // restart the animation on repeat bids
             highestBid.classList.add("bid-flash");
             item.textContent = `${data.user} bid ${data.amount}`;
+            // Present only if this bid changed our balance: we placed it, or
+            // we were the leader and our frozen bid was just refunded.
+            if (data.new_balance !== undefined) {
+                const balanceEl = document.getElementById("header-balance");
+                if (balanceEl) balanceEl.textContent = data.new_balance;
+                if (data.user !== currentUsername) {
+                    item.textContent += ` — you were outbid, your bid was refunded (balance: ${data.new_balance})`;
+                }
+            }
         } else {
             item.textContent = `Error: ${REJECTION_MESSAGES[data.reason] || data.reason}`;
             item.classList.add("error");

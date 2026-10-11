@@ -109,7 +109,12 @@ class LotViewSet(viewsets.ModelViewSet):
         result = services.place_bid(lot.id, request.user.id, amount)
         if result["accepted"]:
             return Response(
-                {"accepted": True, "amount": str(result["amount"]), "user": result["username"]},
+                {
+                    "accepted": True,
+                    "amount": str(result["amount"]),
+                    "user": result["username"],
+                    "new_balance": str(result["balances"][request.user.id]),
+                },
                 status=status.HTTP_201_CREATED,
             )
         return Response(

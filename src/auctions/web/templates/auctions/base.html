@@ -267,7 +267,7 @@
         <a class="brand" href="{% url 'home' %}">🪐 Galactic Artifact Auction</a>
         <nav>
             {% if user.is_authenticated %}
-                <span class="role-badge">{{ user.username }} · {% if user.is_staff %}admin{% else %}user{% endif %} · 💰 {{ user.profile.balance }}</span>
+                <span class="role-badge">{{ user.username }} · {% if user.is_staff %}admin{% else %}user{% endif %} · 💰 <span id="header-balance">{{ user.profile.balance }}</span></span>
                 <a href="{% url 'lot_list' %}">Lots</a>
                 <a href="{% url 'dashboard_user' %}">My dashboard</a>
                 <a href="{% url 'inventory' %}">Inventory</a>

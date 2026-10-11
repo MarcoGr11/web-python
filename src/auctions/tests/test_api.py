@@ -119,6 +119,11 @@ def test_bid_action_uses_shared_service(api_client, other_user, lot):
     authenticate(api_client, other_user)
     resp = api_client.post(f"/api/lots/{lot.pk}/bid/", {"amount": "999"}, format="json")
     assert resp.status_code == 201
-    assert resp.data == {"accepted": True, "amount": "999", "user": "mallory"}
+    assert resp.data == {
+        "accepted": True,
+        "amount": "999",
+        "user": "mallory",
+        "new_balance": "9001.00",
+    }
     lot.refresh_from_db()
     assert lot.current_highest_bid == 999

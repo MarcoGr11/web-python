@@ -40,7 +40,12 @@ async def test_authenticated_user_bid_is_accepted():
 
     await communicator.send_json_to({"amount": "50"})
     response = await communicator.receive_json_from()
-    assert response == {"type": "bid_accepted", "amount": "50", "user": "owner1"}
+    assert response == {
+        "type": "bid_accepted",
+        "amount": "50",
+        "user": "owner1",
+        "new_balance": "9950.00",
+    }
 
     await communicator.disconnect()
 
