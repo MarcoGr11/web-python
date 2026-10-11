@@ -112,3 +112,13 @@ async def test_websocket_returns_insufficient_balance_reason():
         "current_highest_bid": "100.00",
     }
     await communicator.disconnect()
+
+
+def test_balance_shown_in_header_and_dashboard(client, lot):
+    bidder = make_user("bidder", balance=Decimal("1000"))
+    services.place_bid(lot.id, bidder.id, Decimal("300"))
+    client.force_login(bidder)
+    html = client.get("/dashboard/user/").content.decode()
+    assert "💰 700.00" in html  # header
+    assert "Balance: <strong>700.00</strong>" in html
+    assert "frozen in leading bids: 300.00" in html

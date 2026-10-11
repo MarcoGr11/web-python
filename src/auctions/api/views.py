@@ -117,6 +117,7 @@ class UserDashboardView(APIView):
         my_bids = Bid.objects.filter(user=request.user).order_by("-created_at")
         return Response(
             {
+                "balance": str(request.user.profile.balance),
                 "active_lots": LotSerializer(lots, many=True).data,
                 "my_bids": BidSerializer(my_bids, many=True).data,
             }

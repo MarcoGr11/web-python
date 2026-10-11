@@ -3,6 +3,8 @@
 <div class="card">
     <h1>Вітаємо, {{ user.username }}!</h1>
     <p class="muted">This is your dashboard as a regular user.</p>
+    <p>Balance: <strong>{{ user.profile.balance }}</strong>
+        <span class="muted">(frozen in leading bids: {{ frozen }})</span></p>
     <p><a href="{% url 'lot_create' %}">+ Create a new lot</a></p>
     <h2>Active lots</h2>
     <ul class="plain">

@@ -3,6 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied
+from django.db.models import Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
@@ -47,7 +48,10 @@ def logout_view(request):
 @login_required
 def dashboard_user(request):
     lots = Lot.objects.filter(ends_at__gte=timezone.now()).order_by("ends_at")
-    return render(request, "auctions/dashboard_user.html", {"lots": lots})
+    frozen = request.user.winning_lots.filter(ends_at__gt=timezone.now()).aggregate(
+        total=Sum("current_highest_bid")
+    )["total"]
+    return render(request, "auctions/dashboard_user.html", {"lots": lots, "frozen": frozen or 0})
 
 
 @role_required("admin")
