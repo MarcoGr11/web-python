@@ -144,7 +144,8 @@ galactic-auction/
 ├── scripts/              # допоміжні скрипти
 ├── Dockerfile            # образ застосунку (спільний для web і migrate)
 ├── docker-compose.yml    # postgres, redis, migrate (init), web (застосунок)
-├── .env.example          # приклад змінних середовища
+├── .env.sandbox          # змінні sandbox-середовища (заглушки)
+├── .env.production       # змінні production-середовища (заглушки)
 ├── pyproject.toml        # конфігурація ruff / black
 ├── .pre-commit-config.yaml
 └── requirements.txt
@@ -152,24 +153,54 @@ galactic-auction/
 
 ## Запуск
 
-### Через Docker Compose (рекомендовано)
+Проєкт має два середовища — **sandbox** (тестове) і **production** (робоче).
+Яке з них використовується, визначає змінна оточення `DJANGO_ENV`
+(`sandbox` за замовчуванням). `src/config/settings.py` за нею підвантажує
+`.env.sandbox` або `.env.production`.
+
+Обидва файли закомічені, але містять лише **значення-заглушки**. Справжні
+секрети передаються звичайними змінними оточення — вони мають пріоритет над
+файлом (`load_dotenv` не перезаписує вже задані змінні). Якщо якоїсь
+обов'язкової змінної немає, Django не стартує (`ImproperlyConfigured`).
+Локальний `.env` у `.gitignore` і проєктом більше не читається.
+
+### Чим відрізняються середовища
+
+|                     | Sandbox                              | Production                                      |
+|---------------------|--------------------------------------|-------------------------------------------------|
+| База даних          | `galactic_auction_sandbox`           | `galactic_auction_production`                   |
+| Docker volume       | `galactic-auction-sandbox_postgres_data` | `galactic-auction-production_postgres_data` |
+| `DEBUG`             | `True`                               | `False`                                         |
+| Помилки 404/500     | сторінки Django зі стектрейсом       | власні `404.html` / `500.html` без деталей      |
+| `ALLOWED_HOSTS`     | `localhost,127.0.0.1`                | конкретні хости з `.env.production` (не `*`); запит з іншим `Host` → 400 |
+| Демо-дані (`seed`)  | так                                  | ні (демо-паролі в production не потрібні)       |
+
+### Чому один compose-файл, а не два
+
+Обрано **один `docker-compose.yml`** з `env_file: .env.${DJANGO_ENV:-sandbox}`
+і `name: galactic-auction-${DJANGO_ENV:-sandbox}` замість пари
+`docker-compose.sandbox.yml` / `docker-compose.production.yml` чи profiles.
+Сервіси в обох середовищах однакові — різняться лише змінні, тож окремі
+файли дублювали б майже все. Ім'я проєкту залежить від `DJANGO_ENV`, тому
+кожне середовище отримує власні контейнери, мережу і volume з базою —
+тестові дані фізично лежать в іншій базі в іншому сховищі.
+
+Обидва стеки публікують ті самі порти (8000, 5432, 6379), тому одночасно
+запускається одне середовище; перед перемиканням зупиніть інше.
+
+### Sandbox
 
 ```bash
-cp .env.example .env
 docker compose up --build
+# зупинити
+docker compose down
 ```
 
-Це піднімає весь стек одразу:
-- `postgres` і `redis` — інфраструктура (чекають на `healthcheck`);
-- `migrate` — одноразовий init-контейнер: прожене `migrate` і `seed`,
-  наповнить базу демо-адміном/користувачами/лотами, після чого завершується
-  (`Exited (0)` у `docker compose ps -a` — це очікувано, не помилка);
-- `web` — Django/Channels-застосунок через `daphne`, стартує лише після
-  успішного завершення `migrate` (`depends_on: condition:
-  service_completed_successfully`), обслуговує HTML (`/`), REST API
-  (`/api/`) і WebSocket (`/ws/auction/<lot_id>/`) на `http://localhost:8000/`.
-
-Перевірити стан сервісів:
+Стек: `postgres`, `redis`, одноразовий `migrate` (`migrate` + `seed` —
+демо-адмін, користувачі, лоти; `Exited (0)` у `docker compose ps -a` — це
+очікувано) і `web` (Django/Channels через `daphne`, стартує після успішного
+`migrate`) на `http://localhost:8000/`: HTML (`/`), REST API (`/api/`),
+WebSocket (`/ws/auction/<lot_id>/`).
 
 ```bash
 docker compose ps -a
@@ -177,8 +208,30 @@ docker compose logs web
 docker compose logs migrate
 ```
 
-Логіни/паролі демо-користувачів, створених `seed`, — у виводі
-`docker compose logs migrate` або в описі команди нижче.
+### Production
+
+```bash
+DJANGO_ENV=production docker compose up --build
+# зупинити
+DJANGO_ENV=production docker compose down
+```
+
+Справжні секрети задаються змінними оточення поверх заглушок, наприклад:
+
+```bash
+export DJANGO_ENV=production
+export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
+export POSTGRES_PASSWORD='...'
+docker compose up --build
+```
+
+`migrate` у production лише застосовує міграції; адміністратора створіть
+вручну: `DJANGO_ENV=production docker compose exec web python manage.py createsuperuser`.
+
+`python manage.py check --deploy` у production ще попереджає про HTTPS
+(`SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, HSTS) — ці налаштування
+вмикаються, коли перед застосунком стоїть HTTPS-проксі; для локального
+запуску по HTTP вони зламали б логін.
 
 ### Локально без Docker (для розробки)
 
@@ -187,25 +240,20 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env
-docker compose up -d postgres redis   # лише БД і кеш, без web/migrate
+docker compose up -d postgres redis   # лише БД і кеш sandbox-середовища
 
 cd src
 python manage.py migrate
-python manage.py seed                 # або createsuperuser, за бажанням
-python manage.py runserver            # для звичайного HTTP/адмінки
-
-# або через ASGI-сервер (потрібен для WebSocket):
-daphne -b 0.0.0.0 -p 8000 config.asgi:application
+python manage.py seed
+python manage.py runserver            # або: daphne -b 0.0.0.0 -p 8000 config.asgi:application
 ```
-
-WebSocket-ендпоінт для ставок на лот: `ws://localhost:8000/ws/auction/<lot_id>/`.
 
 ### Перевірка конфігурації
 
 ```bash
 cd src
-python manage.py check
+python manage.py check                                  # sandbox
+DJANGO_ENV=production python manage.py check --deploy   # production
 ```
 
 ## Лінтери та pre-commit
