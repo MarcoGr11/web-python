@@ -1,0 +1,12 @@
+{% extends "auctions/base.html" %}
+{% block title %}404 · Galactic Artifact Auction{% endblock %}
+{% block content %}
+<section class="hero">
+    <h1>404</h1>
+    <h2>Сторінку не знайдено</h2>
+    <p class="muted">Цей сектор галактики порожній — сторінки, яку ви шукаєте, не існує або її було переміщено.</p>
+    <div class="hero-actions">
+        <a class="btn" href="{% url 'home' %}">На головну</a>
+    </div>
+</section>
+{% endblock %}
