@@ -114,6 +114,14 @@ cd ..
 pytest -v
 ```
 
+### CI/CD
+
+`.github/workflows/ci.yml` (GitHub Actions) запускається на `push` і
+`pull_request` у `main`: встановлює Python 3.13 і залежності, проганяє
+`ruff check`, `black --check`, `manage.py check` і `pytest -v` проти
+service-контейнерів PostgreSQL та Redis (середовище `sandbox`). Будь-яка
+помилка лінтера чи тесту валить пайплайн.
+
 ## Стек
 
 - Django + Django Channels (ASGI, WebSocket)
@@ -146,6 +154,7 @@ galactic-auction/
 ├── docker-compose.yml    # postgres, redis, migrate (init), web (застосунок)
 ├── .env.sandbox          # змінні sandbox-середовища (заглушки)
 ├── .env.production       # змінні production-середовища (заглушки)
+├── .github/workflows/ci.yml  # CI: ruff, black, pytest на push/PR у main
 ├── pyproject.toml        # конфігурація ruff / black
 ├── .pre-commit-config.yaml
 └── requirements.txt

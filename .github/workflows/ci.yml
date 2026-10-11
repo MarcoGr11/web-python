@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: galactic_auction_sandbox
+          POSTGRES_USER: galactic_auction
+          POSTGRES_PASSWORD: ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U galactic_auction"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    # Tests run against the sandbox environment (.env.sandbox); real env vars
+    # override its placeholders, so the password matches the service above.
+    env:
+      DJANGO_ENV: sandbox
+      POSTGRES_PASSWORD: ci-password
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint (ruff)
+        run: ruff check src
+
+      - name: Check formatting (black)
+        run: black --check src
+
+      - name: Django system check
+        run: python src/manage.py check
+
+      - name: Tests (pytest)
+        run: pytest -v
