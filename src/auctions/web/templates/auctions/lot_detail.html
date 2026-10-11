@@ -28,6 +28,14 @@
     socket.onopen = () => { status.textContent = "Connected — bids update in real time."; };
     socket.onclose = () => { status.textContent = "Disconnected."; };
 
+    const REJECTION_MESSAGES = {
+        outbid: "Your bid must be higher than the current highest bid.",
+        auction_closed: "The auction has already ended.",
+        insufficient_balance: "Not enough balance for this bid.",
+        not_authenticated: "Log in to place bids.",
+        invalid_payload: "Enter a valid amount.",
+    };
+
     socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
         const log = document.getElementById("bid-log");
@@ -40,7 +48,7 @@
             highestBid.classList.add("bid-flash");
             item.textContent = `${data.user} bid ${data.amount}`;
         } else {
-            item.textContent = `Error: ${data.reason}`;
+            item.textContent = `Error: ${REJECTION_MESSAGES[data.reason] || data.reason}`;
             item.classList.add("error");
         }
         log.prepend(item);
