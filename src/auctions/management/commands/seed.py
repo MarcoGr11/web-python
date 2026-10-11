@@ -2,9 +2,11 @@ from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
+from django.db import transaction
 from django.utils import timezone
 
-from auctions.models import Lot
+from auctions.models import Bid, Lot
+from auctions.services import close_expired_lots
 
 ADMIN = {"username": "admin", "password": "adminpass123"}
 
@@ -63,6 +65,7 @@ LOTS = [
         "current_highest_bid": 310,
         "owner": "pilot2",
         "ends_in_days": -1,
+        "winner": "pilot1",
     },
     {
         "title": "Дроїд-архіваріус (несправний)",
@@ -71,6 +74,7 @@ LOTS = [
         "current_highest_bid": 950,
         "owner": "starcommander",
         "ends_in_days": -3,
+        "winner": "voidtrader",
     },
     {
         "title": "Осколок астероїда-привида",
@@ -86,6 +90,7 @@ LOTS = [
 class Command(BaseCommand):
     help = "Seed the database with a demo admin, regular users, and themed auction lots."
 
+    @transaction.atomic
     def handle(self, *args, **options):
         created_credentials = []
 
@@ -108,7 +113,7 @@ class Command(BaseCommand):
             created_credentials.append((spec["username"], spec["password"], "user"))
 
         for spec in LOTS:
-            Lot.objects.get_or_create(
+            lot, _ = Lot.objects.get_or_create(
                 title=spec["title"],
                 defaults={
                     "description": spec["description"],
@@ -118,8 +123,20 @@ class Command(BaseCommand):
                     "ends_at": timezone.now() + timedelta(days=spec["ends_in_days"]),
                 },
             )
+            # Already-finished auctions with a winner, so /inventory/ has
+            # something to show. Charged the same way place_bid() does, and
+            # only once: re-running seed skips lots that already have a winner.
+            if "winner" in spec and lot.current_winner_id is None:
+                winner = users_by_username[spec["winner"]]
+                Bid.objects.create(lot=lot, user=winner, amount=lot.current_highest_bid)
+                lot.current_winner = winner
+                lot.save(update_fields=["current_winner"])
+                winner.profile.balance -= lot.current_highest_bid
+                winner.profile.save(update_fields=["balance"])
+
+        closed = close_expired_lots()
 
         self.stdout.write(self.style.SUCCESS("Seed complete. Login credentials:"))
         for username, password, role in created_credentials:
             self.stdout.write(f"  {username} / {password}  ({role})")
-        self.stdout.write(f"Lots in database: {Lot.objects.count()}")
+        self.stdout.write(f"Lots in database: {Lot.objects.count()} (closed now: {closed})")

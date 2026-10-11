@@ -93,3 +93,14 @@ def test_lot_list_marks_closed_lots(client, won_lot):
     html = client.get("/lots/").content.decode()
     assert "<s>Kyber Crystal</s>" in html
     assert "Closed" in html
+
+
+def test_seed_creates_closed_won_lots_idempotently(db):
+    call_command("seed")
+    call_command("seed")
+    pilot1 = User.objects.get(username="pilot1")
+    won = Lot.objects.filter(current_winner=pilot1, is_closed=True)
+    assert [lot.title for lot in won] == ["Флакон зоряного пилу"]
+    pilot1.profile.refresh_from_db()
+    assert pilot1.profile.balance == Decimal("10000.00") - won[0].current_highest_bid
+    assert User.objects.get(username="admin").profile.balance == Decimal("10000.00")
