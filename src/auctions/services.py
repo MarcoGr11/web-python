@@ -82,10 +82,37 @@ def place_bid(lot_id, user_id, amount: Decimal) -> dict:
 
 
 def close_expired_lots() -> int:
-    """Mark every lot whose ends_at has passed as closed; returns how many.
+    """Close every lot whose ends_at has passed and pay its seller; returns
+    how many lots were closed.
 
-    No money moves here: the winner's final bid was already deducted when it
-    became the leading bid (place_bid), so closing only makes it final.
-    A single UPDATE, so concurrent callers can't close a lot twice.
+    The winner's final bid was already deducted when it became the leading
+    bid (place_bid), so closing doesn't charge them again — it only credits
+    the same amount to the lot owner. Owners may bid on their own lots; if
+    the owner is the winner, they paid X at bid time and get X back here, so
+    no money is created or lost.
+
+    Locks the lots first, then all owners' profiles in one user_id-ordered
+    query — the same lot-then-profiles order place_bid() uses, so the two
+    can't deadlock. A concurrent closer blocks on the lot rows and, once
+    they're committed as closed, no longer matches is_closed=False, so a
+    seller is never paid twice.
     """
-    return Lot.objects.filter(is_closed=False, ends_at__lte=timezone.now()).update(is_closed=True)
+    with transaction.atomic():
+        lots = list(
+            Lot.objects.select_for_update()
+            .filter(is_closed=False, ends_at__lte=timezone.now())
+            .order_by("id")
+        )
+        sold = [lot for lot in lots if lot.current_winner_id is not None]
+        sellers = {
+            p.user_id: p
+            for p in UserProfile.objects.select_for_update()
+            .filter(user_id__in={lot.owner_id for lot in sold})
+            .order_by("user_id")
+        }
+        for lot in sold:
+            sellers[lot.owner_id].balance += lot.current_highest_bid
+        for profile in sellers.values():
+            profile.save(update_fields=["balance"])
+        Lot.objects.filter(id__in=[lot.id for lot in lots]).update(is_closed=True)
+    return len(lots)

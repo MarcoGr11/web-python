@@ -122,3 +122,48 @@ def test_balance_shown_in_header_and_dashboard(client, lot):
     assert "💰 700.00" in html  # header
     assert "Balance: <strong>700.00</strong>" in html
     assert "frozen in leading bids: 300.00" in html
+
+
+def expire(lot):
+    Lot.objects.filter(pk=lot.pk).update(ends_at=timezone.now() - timedelta(minutes=1))
+
+
+def test_closing_pays_the_seller_exactly_once(lot):
+    winner = make_user("winner", balance=Decimal("1000"))
+    services.place_bid(lot.id, winner.id, Decimal("300"))
+    expire(lot)
+    assert services.close_expired_lots() == 1
+    assert services.close_expired_lots() == 0
+    assert balance(lot.owner) == STARTING_BALANCE + 300
+    assert balance(winner) == 700  # charged once, at bid time
+
+
+def test_closing_lot_without_bids_pays_nobody(lot):
+    expire(lot)
+    services.close_expired_lots()
+    assert balance(lot.owner) == STARTING_BALANCE
+
+
+def test_owner_winning_own_lot_nets_to_zero(lot):
+    services.place_bid(lot.id, lot.owner_id, Decimal("300"))
+    assert balance(lot.owner) == STARTING_BALANCE - 300
+    expire(lot)
+    services.close_expired_lots()
+    assert balance(lot.owner) == STARTING_BALANCE
+
+
+def test_one_seller_paid_for_several_lots(lot):
+    second = Lot.objects.create(
+        title="Second",
+        starting_price=50,
+        current_highest_bid=50,
+        owner=lot.owner,
+        ends_at=lot.ends_at,
+    )
+    buyer = make_user("buyer")
+    services.place_bid(lot.id, buyer.id, Decimal("300"))
+    services.place_bid(second.id, buyer.id, Decimal("200"))
+    expire(lot)
+    expire(second)
+    assert services.close_expired_lots() == 2
+    assert balance(lot.owner) == STARTING_BALANCE + 500
