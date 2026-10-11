@@ -26,9 +26,16 @@ class LotSerializer(serializers.ModelSerializer):
             "current_winner",
             "owner",
             "ends_at",
+            "is_closed",
             "created_at",
         ]
-        read_only_fields = ["current_highest_bid", "current_winner", "owner", "created_at"]
+        read_only_fields = [
+            "current_highest_bid",
+            "current_winner",
+            "owner",
+            "is_closed",
+            "created_at",
+        ]
 
 
 class BidSerializer(serializers.ModelSerializer):

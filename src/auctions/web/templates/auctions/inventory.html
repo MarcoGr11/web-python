@@ -1,0 +1,19 @@
+{% extends "auctions/base.html" %}
+{% block title %}Inventory · Galactic Artifact Auction{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>Інвентар</h1>
+    <p class="muted">Лоти, які ви виграли на завершених аукціонах.</p>
+    <ul class="plain">
+        {% for lot in lots %}
+        <li>
+            <a href="{% url 'lot_detail' lot.pk %}">{{ lot.title }}</a>
+            — фінальна ціна: <strong>{{ lot.current_highest_bid }}</strong>,
+            завершено: {{ lot.ends_at|date:"d.m.Y H:i" }}
+        </li>
+        {% empty %}
+        <li class="muted">Поки що порожньо — виграйте свій перший артефакт.</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}

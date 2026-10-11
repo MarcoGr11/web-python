@@ -23,7 +23,7 @@ def place_bid(lot_id, user_id, amount: Decimal) -> dict:
     with transaction.atomic():
         lot = Lot.objects.select_for_update().get(id=lot_id)
 
-        if timezone.now() >= lot.ends_at:
+        if lot.is_closed or timezone.now() >= lot.ends_at:
             return {
                 "accepted": False,
                 "reason": "auction_closed",
@@ -79,3 +79,13 @@ def place_bid(lot_id, user_id, amount: Decimal) -> dict:
         "username": bid.user.username,
         "bid_id": bid.id,
     }
+
+
+def close_expired_lots() -> int:
+    """Mark every lot whose ends_at has passed as closed; returns how many.
+
+    No money moves here: the winner's final bid was already deducted when it
+    became the leading bid (place_bid), so closing only makes it final.
+    A single UPDATE, so concurrent callers can't close a lot twice.
+    """
+    return Lot.objects.filter(is_closed=False, ends_at__lte=timezone.now()).update(is_closed=True)

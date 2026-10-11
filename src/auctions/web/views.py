@@ -8,6 +8,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from ..models import Lot
+from ..services import close_expired_lots
 from .decorators import role_required
 from .forms import LotForm, RegisterForm
 
@@ -65,11 +66,13 @@ def dashboard_admin(request):
 
 @login_required
 def lot_list(request):
+    close_expired_lots()
     return render(request, "auctions/lot_list.html", {"lots": Lot.objects.all()})
 
 
 @login_required
 def lot_detail(request, pk):
+    close_expired_lots()
     lot = get_object_or_404(Lot, pk=pk)
     return render(request, "auctions/lot_detail.html", {"lot": lot})
 
@@ -102,3 +105,10 @@ def lot_edit(request, pk):
     else:
         form = LotForm(instance=lot)
     return render(request, "auctions/lot_edit.html", {"form": form, "lot": lot})
+
+
+@login_required
+def inventory_view(request):
+    close_expired_lots()
+    lots = Lot.objects.filter(current_winner=request.user, is_closed=True).order_by("-ends_at")
+    return render(request, "auctions/inventory.html", {"lots": lots})

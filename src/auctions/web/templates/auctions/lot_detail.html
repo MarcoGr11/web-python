@@ -10,6 +10,16 @@
     <p><a href="{% url 'lot_edit' lot.pk %}">Edit lot</a></p>
     {% endif %}
 
+    {% if lot.is_closed %}
+    <h2>Аукціон завершено.</h2>
+    {% if not lot.current_winner %}
+    <p class="muted">Ставок не було — переможця немає.</p>
+    {% elif lot.current_winner_id == user.id %}
+    <p><strong>Ви виграли!</strong> Лот уже у вашому <a href="{% url 'inventory' %}">інвентарі</a>.</p>
+    {% else %}
+    <p>Переможець: <strong>{{ lot.current_winner.username }}</strong></p>
+    {% endif %}
+    {% else %}
     <h2>Place a bid</h2>
     <p id="ws-status" class="muted">Connecting…</p>
     <form id="bid-form">
@@ -17,9 +27,11 @@
         <button type="submit">Bid</button>
     </form>
     <ul class="plain" id="bid-log"></ul>
+    {% endif %}
 </div>
 
 <script>
+    {% if not lot.is_closed %}
     const lotId = {{ lot.pk }};
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(`${protocol}//${window.location.host}/ws/auction/${lotId}/`);
@@ -60,6 +72,7 @@
         socket.send(JSON.stringify({amount: amountInput.value}));
         amountInput.value = "";
     });
+    {% endif %}
 
     // Cockpit-style countdown to lot.ends_at.
     (function () {

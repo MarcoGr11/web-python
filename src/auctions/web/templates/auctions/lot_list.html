@@ -6,7 +6,11 @@
     <ul class="plain">
         {% for lot in lots %}
         <li>
-            <a href="{% url 'lot_detail' lot.pk %}">{{ lot.title }}</a>
+            {% if lot.is_closed %}
+                <a href="{% url 'lot_detail' lot.pk %}"><s>{{ lot.title }}</s></a> <span class="role-badge">Closed</span>
+            {% else %}
+                <a href="{% url 'lot_detail' lot.pk %}">{{ lot.title }}</a>
+            {% endif %}
             — current bid: {{ lot.current_highest_bid }}, owner: {{ lot.owner.username }}
             {% if lot.owner_id == user.id or user.is_staff %}
                 (<a href="{% url 'lot_edit' lot.pk %}">edit</a>)

@@ -72,6 +72,10 @@ class LotViewSet(viewsets.ModelViewSet):
     queryset = Lot.objects.all().order_by("-created_at")
     serializer_class = LotSerializer
 
+    def get_queryset(self):
+        services.close_expired_lots()
+        return super().get_queryset()
+
     def get_permissions(self):
         if self.action in ("update", "partial_update", "destroy"):
             return [permissions.IsAuthenticated(), IsOwnerOrAdmin()]
@@ -122,6 +126,15 @@ class UserDashboardView(APIView):
                 "my_bids": BidSerializer(my_bids, many=True).data,
             }
         )
+
+
+class InventoryView(APIView):
+    """GET /api/inventory/ — closed lots the current user won."""
+
+    def get(self, request):
+        services.close_expired_lots()
+        lots = Lot.objects.filter(current_winner=request.user, is_closed=True).order_by("-ends_at")
+        return Response(LotSerializer(lots, many=True).data)
 
 
 class AdminDashboardView(APIView):

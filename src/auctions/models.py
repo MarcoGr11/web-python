@@ -47,6 +47,9 @@ class Lot(models.Model):
         related_name="owned_lots",
     )
     ends_at = models.DateTimeField()
+    # Set by services.close_expired_lots() once ends_at has passed; from then
+    # on current_winner is the final winner and the lot is in their inventory.
+    is_closed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
