@@ -1,0 +1,11 @@
+# Development override with hot-reload:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# ./src is bind-mounted over the code baked into the image, and watchfiles
+# restarts daphne on every change (.py, templates, static) — no rebuild needed.
+# Daphne has no --reload of its own and 'daphne' isn't in INSTALLED_APPS,
+# so runserver would fall back to WSGI and lose WebSockets.
+services:
+  web:
+    volumes:
+      - ./src:/app/src
+    command: watchfiles "daphne -b 0.0.0.0 -p 8000 config.asgi:application" /app/src
