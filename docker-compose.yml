@@ -7,12 +7,14 @@ name: galactic-auction-${DJANGO_ENV:-sandbox}
 
 services:
   postgres:
+    networks: [backend]
     image: postgres:16-alpine
     restart: unless-stopped
     env_file:
       - .env.${DJANGO_ENV:-sandbox}
+    # Published on loopback only: pytest/Locust on the host need it, the LAN doesn't.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,10 +24,11 @@ services:
       retries: 5
 
   redis:
+    networks: [backend]
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -36,6 +39,7 @@ services:
   # demo data with well-known passwords, then exits. Kept separate from `web` so the long-running server process
   # doesn't also own this one-time setup logic.
   migrate:
+    networks: [backend]
     build: .
     env_file:
       - .env.${DJANGO_ENV:-sandbox}
@@ -53,6 +57,7 @@ services:
     restart: "no"
 
   web:
+    networks: [backend]
     build: .
     ports:
       - "8000:8000"
@@ -70,6 +75,16 @@ services:
         condition: service_completed_successfully
     command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
     restart: unless-stopped
+    # No curl in the slim image, so probe the home page with the stdlib.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  backend:
 
 volumes:
   postgres_data:
