@@ -36,8 +36,9 @@ services:
       retries: 5
 
   # One-shot init container: applies migrations and (sandbox only) seeds
-  # demo data with well-known passwords, then exits. Kept separate from `web` so the long-running server process
-  # doesn't also own this one-time setup logic.
+  # demo data with well-known passwords, then exits. Kept separate from `web`
+  # so N replicas starting at once never race on migrate/seed: it runs exactly
+  # once and every replica waits for it (service_completed_successfully).
   migrate:
     networks: [backend]
     build: .
@@ -56,11 +57,15 @@ services:
              if [ \"$$DJANGO_ENV\" = sandbox ]; then python manage.py seed; fi"
     restart: "no"
 
+  # Identical stateless replicas: sessions live in postgres, the channel layer
+  # in redis, SECRET_KEY comes from the same env file. No host port — replicas
+  # can't share one; nginx is the only entry point.
+  #   docker compose up --build --scale web=1   -> override the replica count
   web:
     networks: [backend]
     build: .
-    ports:
-      - "8000:8000"
+    deploy:
+      replicas: 3
     env_file:
       - .env.${DJANGO_ENV:-sandbox}
     environment:
