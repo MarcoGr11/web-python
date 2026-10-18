@@ -60,7 +60,7 @@ services:
   # Identical stateless replicas: sessions live in postgres, the channel layer
   # in redis, SECRET_KEY comes from the same env file. No host port — replicas
   # can't share one; nginx is the only entry point.
-  #   docker compose up --build --scale web=1   -> override the replica count
+  #   docker compose up -d --scale web=1 && docker compose restart nginx
   web:
     networks: [backend]
     build: .
