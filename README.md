@@ -94,21 +94,21 @@ python manage.py seed
 
 ```bash
 # 1. Реєстрація (одразу повертає токен)
-curl -X POST http://localhost:8000/api/auth/register/ \
+curl -X POST http://localhost/api/auth/register/ \
   -H "Content-Type: application/json" \
   -d '{"username":"pilot3","email":"pilot3@example.com","password":"S3curePass!23"}'
 
 # 2. Або логін, якщо користувач вже існує
-curl -X POST http://localhost:8000/api/auth/login/ \
+curl -X POST http://localhost/api/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{"username":"pilot3","password":"S3curePass!23"}'
 # -> {"token": "<TOKEN>", "user": {...}}
 
 # 3. Запит з токеном
-curl http://localhost:8000/api/lots/ -H "Authorization: Token <TOKEN>"
+curl http://localhost/api/lots/ -H "Authorization: Token <TOKEN>"
 
 # 4. Ставка на лот (та сама race-condition-захищена логіка, що й у WebSocket)
-curl -X POST http://localhost:8000/api/lots/1/bid/ \
+curl -X POST http://localhost/api/lots/1/bid/ \
   -H "Authorization: Token <TOKEN>" -H "Content-Type: application/json" \
   -d '{"amount": "150.00"}'
 ```
@@ -162,6 +162,7 @@ galactic-auction/
 ├── Dockerfile            # multi-stage образ застосунку (спільний для web і migrate)
 ├── docker-compose.yml    # postgres, redis, migrate (init), web (застосунок)
 ├── docker-compose.dev.yml  # override для розробки: bind mount ./src + hot-reload
+├── nginx/nginx.conf      # балансувальник: upstream web, /ws/, пасивні health-checks
 ├── .dockerignore
 ├── .env.sandbox          # змінні sandbox-середовища (заглушки)
 ├── .env.production       # змінні production-середовища (заглушки)
@@ -206,7 +207,7 @@ galactic-auction/
 кожне середовище отримує власні контейнери, мережу і volume з базою —
 тестові дані фізично лежать в іншій базі в іншому сховищі.
 
-Обидва стеки публікують ті самі порти (8000, 5432, 6379), тому одночасно
+Обидва стеки публікують ті самі порти (80, 5432, 6379), тому одночасно
 запускається одне середовище; перед перемиканням зупиніть інше.
 
 ### Sandbox
@@ -219,9 +220,9 @@ docker compose down
 
 Стек: `postgres`, `redis`, одноразовий `migrate` (`migrate` + `seed` —
 демо-адмін, користувачі, лоти; `Exited (0)` у `docker compose ps -a` — це
-очікувано) і `web` (Django/Channels через `daphne`, стартує після успішного
-`migrate`) на `http://localhost:8000/`: HTML (`/`), REST API (`/api/`),
-WebSocket (`/ws/auction/<lot_id>/`).
+очікувано), 3 репліки `web` (Django/Channels через `daphne`, стартують після
+успішного `migrate`) і `nginx` — єдина точка входу на `http://localhost/`:
+HTML (`/`), REST API (`/api/`), WebSocket (`/ws/auction/<lot_id>/`).
 
 ```bash
 docker compose ps -a
@@ -287,7 +288,7 @@ DJANGO_ENV=production python manage.py check --deploy   # production
 - **`.dockerignore`** не пускає в образ `.git`, `.venv`, кеші, `*.log`, `docs`,
   `locust/results` і всі `.env*` — змінні передаються на рантаймі через `env_file`.
 - **Мережа** `backend` оголошена явно; сервіси звертаються один до одного за
-  іменами (`postgres`, `redis`). Назовні: `web` — `:8000`, `postgres` і `redis` —
+  іменами (`postgres`, `redis`, `web`). Назовні: `nginx` — `:80`, `postgres` і `redis` —
   лише `127.0.0.1:5432` / `127.0.0.1:6379` (для pytest і Locust з хоста).
 - **Healthchecks**: `postgres` (`pg_isready`), `redis` (`redis-cli ping`),
   `web` (HTTP-запит до `/` через `urllib`); `migrate` і `web` чекають
@@ -299,6 +300,34 @@ docker compose ps                # STATUS: (healthy)
 docker images | grep galactic    # розмір образу
 ```
 
+### Nginx і репліки (балансування навантаження)
+
+Детальний звіт ЛР №6: [docs/lab6_load_balancing.md](docs/lab6_load_balancing.md).
+
+`web` запускається у 3 однакових репліках (`deploy.replicas: 3`) без власного
+порту на хості; назовні виходить лише `nginx` (`:80`), який розподіляє HTTP і
+WebSocket між ними (Round Robin). Міграції й `seed` виконує одноразовий
+`migrate` — рівно один раз, репліки чекають на нього.
+
+```bash
+docker compose up --build                     # postgres, redis, migrate, web×3, nginx
+open http://localhost/                        # сайт через nginx
+
+# інша кількість реплік: nginx резолвить їх при старті, тож перезапустіть його
+docker compose up -d --scale web=1 && docker compose restart nginx
+```
+
+Перевірка розподілу — кожна відповідь має заголовок `X-Served-By` (ID контейнера):
+
+```bash
+for i in $(seq 1 20); do curl -s http://localhost/api/whoami/; echo; done
+curl -sI http://localhost/ | grep -i x-served-by
+```
+
+Відмовостійкість: `docker stop galactic-auction-sandbox-web-2` — запити далі
+йдуть без помилок на web-1 і web-3; після `docker start ...` репліка повертається
+в ротацію (не пізніше ніж за `fail_timeout` = 10 с).
+
 ### Режим розробки (hot-reload)
 
 ```bash
@@ -308,7 +337,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 `docker-compose.dev.yml` монтує `./src` у `/app/src` (bind mount) і запускає
 `daphne` під `watchfiles`: будь-яка зміна `.py`, шаблону чи статики перезапускає
 сервер без перезбірки образу (у логах `web` — `1 change detected` і новий
-`Listening on TCP address 0.0.0.0:8000`). В основному `docker-compose.yml`
+`Listening on TCP address 0.0.0.0:8000` у кожній репліці). В основному `docker-compose.yml`
 bind mount немає — там код береться з образу.
 
 ### Перевірка persistence
