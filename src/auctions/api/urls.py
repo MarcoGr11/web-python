@@ -7,6 +7,7 @@ router = DefaultRouter()
 router.register("lots", views.LotViewSet, basename="api-lot")
 
 urlpatterns = [
+    path("whoami/", views.whoami, name="api-whoami"),
     path("auth/register/", views.RegisterView.as_view(), name="api-register"),
     path("auth/login/", views.LoginView.as_view(), name="api-login"),
     path("auth/logout/", views.LogoutView.as_view(), name="api-logout"),

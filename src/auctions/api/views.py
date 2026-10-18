@@ -2,6 +2,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.http import JsonResponse
 from django.utils import timezone
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.authtoken.models import Token
@@ -11,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .. import services
+from ..middleware import HOSTNAME
 from ..models import Bid, Lot
 from .serializers import BidSerializer, LotSerializer, RegisterSerializer, UserSerializer
 
@@ -20,6 +22,11 @@ class IsOwnerOrAdmin(permissions.BasePermission):
 
     def has_object_permission(self, request, view, obj):
         return obj.owner_id == request.user.id or request.user.is_staff
+
+
+def whoami(request):
+    """Public, DB-free: which replica answered (plain Django view, so no DRF auth lookup)."""
+    return JsonResponse({"hostname": HOSTNAME})
 
 
 class RegisterView(generics.CreateAPIView):
