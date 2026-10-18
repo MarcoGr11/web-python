@@ -161,6 +161,8 @@ galactic-auction/
 ├── scripts/              # допоміжні скрипти
 ├── Dockerfile            # multi-stage образ застосунку (спільний для web і migrate)
 ├── docker-compose.yml    # postgres, redis, migrate (init), web (застосунок)
+├── docker-compose.dev.yml  # override для розробки: bind mount ./src + hot-reload
+├── .dockerignore
 ├── .env.sandbox          # змінні sandbox-середовища (заглушки)
 ├── .env.production       # змінні production-середовища (заглушки)
 ├── .github/workflows/ci.yml  # CI: ruff, black, pytest на push/PR у main
@@ -274,6 +276,56 @@ cd src
 python manage.py check                                  # sandbox
 DJANGO_ENV=production python manage.py check --deploy   # production
 ```
+
+## Docker
+
+Детальний звіт ЛР №5: [docs/lab5_docker.md](docs/lab5_docker.md).
+
+- **Образ** (`Dockerfile`) — multi-stage: стадія `builder` (gcc, `libpq-dev`)
+  збирає wheels, фінальна `python:3.13-slim` встановлює лише їх і запускає код
+  від звичайного користувача `app` (не root). Розмір: 929 MB → 402 MB.
+- **`.dockerignore`** не пускає в образ `.git`, `.venv`, кеші, `*.log`, `docs`,
+  `locust/results` і всі `.env*` — змінні передаються на рантаймі через `env_file`.
+- **Мережа** `backend` оголошена явно; сервіси звертаються один до одного за
+  іменами (`postgres`, `redis`). Назовні: `web` — `:8000`, `postgres` і `redis` —
+  лише `127.0.0.1:5432` / `127.0.0.1:6379` (для pytest і Locust з хоста).
+- **Healthchecks**: `postgres` (`pg_isready`), `redis` (`redis-cli ping`),
+  `web` (HTTP-запит до `/` через `urllib`); `migrate` і `web` чекають
+  `service_healthy`, `web` ще й `service_completed_successfully` від `migrate`.
+
+```bash
+docker compose up --build        # усе однією командою
+docker compose ps                # STATUS: (healthy)
+docker images | grep galactic    # розмір образу
+```
+
+### Режим розробки (hot-reload)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+`docker-compose.dev.yml` монтує `./src` у `/app/src` (bind mount) і запускає
+`daphne` під `watchfiles`: будь-яка зміна `.py`, шаблону чи статики перезапускає
+сервер без перезбірки образу (у логах `web` — `1 change detected` і новий
+`Listening on TCP address 0.0.0.0:8000`). В основному `docker-compose.yml`
+bind mount немає — там код береться з образу.
+
+### Перевірка persistence
+
+Дані PostgreSQL лежать в іменованому volume
+`galactic-auction-<env>_postgres_data` і переживають видалення контейнерів:
+
+```bash
+docker compose exec postgres psql -U galactic_auction -d galactic_auction_sandbox \
+  -c "create table persistence_check(note text); insert into persistence_check values ('hi');"
+docker compose down                       # БЕЗ -v: volume лишається
+docker compose up -d --wait
+docker compose exec postgres psql -U galactic_auction -d galactic_auction_sandbox \
+  -c "select * from persistence_check; drop table persistence_check;"
+```
+
+`docker compose down -v` видаляє volume разом із даними.
 
 ## Лінтери та pre-commit
 
