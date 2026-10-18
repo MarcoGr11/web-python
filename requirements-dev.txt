@@ -1,0 +1,8 @@
+-r requirements.txt
+
+ruff
+black
+pre-commit
+pytest
+pytest-django
+pytest-asyncio

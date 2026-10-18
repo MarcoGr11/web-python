@@ -159,14 +159,15 @@ galactic-auction/
 │       └── tests/
 ├── config/               # приклади конфігурації / інфраструктурні файли
 ├── scripts/              # допоміжні скрипти
-├── Dockerfile            # образ застосунку (спільний для web і migrate)
+├── Dockerfile            # multi-stage образ застосунку (спільний для web і migrate)
 ├── docker-compose.yml    # postgres, redis, migrate (init), web (застосунок)
 ├── .env.sandbox          # змінні sandbox-середовища (заглушки)
 ├── .env.production       # змінні production-середовища (заглушки)
 ├── .github/workflows/ci.yml  # CI: ruff, black, pytest на push/PR у main
 ├── pyproject.toml        # конфігурація ruff / black
 ├── .pre-commit-config.yaml
-└── requirements.txt
+├── requirements.txt      # рантайм-залежності (потрапляють в образ)
+└── requirements-dev.txt  # + ruff, black, pytest, pre-commit (локально і в CI)
 ```
 
 ## Запуск
@@ -256,7 +257,7 @@ docker compose up --build
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
 docker compose up -d postgres redis   # лише БД і кеш sandbox-середовища
 

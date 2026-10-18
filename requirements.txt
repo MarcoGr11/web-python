@@ -5,11 +5,3 @@ psycopg2-binary
 python-dotenv
 daphne
 djangorestframework
-
-# dev tooling
-ruff
-black
-pre-commit
-pytest
-pytest-django
-pytest-asyncio
